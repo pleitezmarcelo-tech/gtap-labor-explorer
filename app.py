@@ -388,7 +388,7 @@ with st.sidebar:
 
     if default_anthropic:
         anthropic_key = default_anthropic
-        st.success("Anthropic API key configured", icon="✓")
+        st.success("Anthropic API key configured")
     else:
         anthropic_key = st.text_input(
             "Anthropic API Key", type="password",
