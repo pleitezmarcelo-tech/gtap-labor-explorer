@@ -378,11 +378,24 @@ with st.sidebar:
 
     st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.markdown("**API Keys**")
-    anthropic_key = st.text_input(
-        "Anthropic API Key", type="password",
-        value=os.environ.get("ANTHROPIC_API_KEY", ""),
-        help="Get your key at console.anthropic.com"
-    )
+
+    # Read Anthropic key from Streamlit secrets first, then env, then manual input
+    default_anthropic = ""
+    try:
+        default_anthropic = st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        default_anthropic = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    if default_anthropic:
+        anthropic_key = default_anthropic
+        st.success("Anthropic API key configured", icon="✓")
+    else:
+        anthropic_key = st.text_input(
+            "Anthropic API Key", type="password",
+            help="Get your key at console.anthropic.com"
+        )
+
+    # USDA key always manual (optional)
     usda_key = st.text_input(
         "USDA NASS API Key (optional)", type="password",
         value=os.environ.get("USDA_API_KEY", ""),
