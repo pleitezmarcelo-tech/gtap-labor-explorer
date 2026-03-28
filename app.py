@@ -77,6 +77,14 @@ SMETA = {
     "USMCA_LR":   {"label":"USMCA  Long Run",      "color":"#2980b9"},
 }
 
+
+# Scenario groups by impact type
+IMPACT_GROUPS = {
+    "All scenarios":      ["baseline","JPM_sim03","JPM_sim03b","JPM_sim03c","USMCA_SR","USMCA_LR"],
+    "Immigration Impact": ["baseline","JPM_sim03","JPM_sim03b","JPM_sim03c"],
+    "Trade Impact":       ["baseline","USMCA_SR","USMCA_LR"],
+}
+
 #  Page config 
 st.set_page_config(page_title="GTAP Labor Data Explorer", page_icon="",
                    layout="wide", initial_sidebar_state="expanded")
@@ -225,9 +233,17 @@ def render_dashboard(df):
     st.markdown("### Interactive Dashboard")
     st.caption("All charts update in real time.")
 
-    # Sector aggregation toggle
-    agg = st.radio("Sector view", ["65 GTAP sectors","27 Model sectors"],
-                   horizontal=True, key="d_agg")
+    # Impact type + Sector view controls
+    ctrl1, ctrl2 = st.columns(2)
+    with ctrl1:
+        impact = st.radio("Impact type",
+            ["All scenarios","Immigration Impact","Trade Impact"],
+            horizontal=True, key="d_impact")
+    with ctrl2:
+        agg = st.radio("Sector view",
+            ["65 GTAP sectors","27 Model sectors"],
+            horizontal=True, key="d_agg")
+
     use_agg = (agg == "27 Model sectors")
     sc = "_msc" if use_agg else "gtap_code"
     sd = "_msd" if use_agg else "gtap_sector"
@@ -239,11 +255,13 @@ def render_dashboard(df):
 
     with cols[0]:
         if hs:
-            so  = sorted(df["scenario"].unique().tolist())
-            ss  = st.selectbox("Scenario", so, key="d_scen",
+            allowed = IMPACT_GROUPS.get(impact, list(SMETA.keys()))
+            so = [s for s in sorted(df["scenario"].unique().tolist()) if s in allowed]
+            ss = st.selectbox("Scenario", so, key="d_scen",
                     format_func=lambda x: SMETA.get(x,{}).get("label",x))
         else:
             ss = "baseline"
+
 
     with (cols[1] if hs else cols[0]):
         yrs = [2024] if (hs and ss != "baseline") else (
