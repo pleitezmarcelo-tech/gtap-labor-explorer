@@ -138,6 +138,25 @@ def load_data(path):
     return _clean_df(pd.read_csv(path, dtype={"county_fips": str}))
 
 def _clean_df(df):
+    # ── Step 1: Rename legacy column names to new standard ───────────────────
+    col_renames = {
+        "gtap":             "gtap_code",
+        "gtap_desc":        "gtap_sector",
+        "skill":            "skill_level",
+        "birthplace_label": "birthplace",
+        "estimated_workers":"workers_base",
+    }
+    for old_col, new_col in col_renames.items():
+        if old_col in df.columns and new_col not in df.columns:
+            df = df.rename(columns={old_col: new_col})
+
+    # ── Step 2: Add missing required columns ─────────────────────────────────
+    if "scenario" not in df.columns:
+        df["scenario"] = "baseline"
+    if "year" not in df.columns:
+        df["year"] = 2024
+
+    # ── Step 3: Fix county_fips ───────────────────────────────────────────────
     if "county_fips" in df.columns:
         df["county_fips"] = (df["county_fips"].fillna("")
                              .astype(str).str.strip()
