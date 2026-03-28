@@ -10,6 +10,46 @@ import pandas as pd
 import anthropic
 from tools import TOOL_DEFINITIONS, execute_tool
 
+
+GTAP_TO_MODEL = {
+    "v_f":("FrtVeg","Fruits and vegetables"),
+    "pdr":("Grains","Grains"),"wht":("Grains","Grains"),"gro":("Grains","Grains"),
+    "osd":("Crops","Other crops"),"c_b":("Crops","Other crops"),
+    "pfb":("Crops","Other crops"),"ocr":("Crops","Other crops"),
+    "ctl":("Lvstk","Livestock and meat"),"oap":("Lvstk","Livestock and meat"),
+    "rmk":("Lvstk","Livestock and meat"),"wol":("Lvstk","Livestock and meat"),
+    "frs":("ForFish","Forestry and fishing"),"fsh":("ForFish","Forestry and fishing"),
+    "coa":("Mining","Mining"),"oil":("Mining","Mining"),
+    "gas":("Mining","Mining"),"oxt":("Mining","Mining"),
+    "cmt":("Food","Processed food"),"omt":("Food","Processed food"),
+    "vol":("Food","Processed food"),"mil":("Food","Processed food"),
+    "pcr":("Food","Processed food"),"sgr":("Food","Processed food"),
+    "ofd":("Food","Processed food"),"b_t":("Food","Processed food"),
+    "tex":("Text","Textiles and clothing"),"wap":("Text","Textiles and clothing"),
+    "i_s":("Metals","Metals"),"nfm":("Metals","Metals"),"fmp":("Metals","Metals"),
+    "lea":("WoodProd","Leather and wood"),"lum":("WoodProd","Leather and wood"),
+    "ppp":("WoodProd","Leather and wood"),"omf":("WoodProd","Leather and wood"),
+    "mvh":("Autos","Autos"),
+    "nmm":("Cment","Cement"),
+    "p_c":("Petro","Petroleum"),
+    "chm":("Chem","Chemicals"),
+    "bph":("Pharma","Pharmaceuticals"),
+    "rpp":("OthrMfg","Other manufacturing"),"ele":("OthrMfg","Other manufacturing"),
+    "eeq":("OthrMfg","Other manufacturing"),"ome":("OthrMfg","Other manufacturing"),
+    "otn":("OthrMfg","Other manufacturing"),
+    "ely":("Util","Utilities"),"gdt":("Util","Utilities"),"wtr":("Util","Utilities"),
+    "cns":("Const","Construction"),
+    "otp":("Transp","Transport"),"wtp":("Transp","Transport"),"atp":("Transp","Transport"),
+    "afs":("Hotel","Accommodation and food"),
+    "trd":("Retail","Retail trade and communication"),
+    "whs":("Retail","Retail trade and communication"),
+    "cmn":("Retail","Retail trade and communication"),
+    "ros":("PubSer","Public services"),"osg":("PubSer","Public services"),
+    "edu":("PubSer","Public services"),"hht":("PubSer","Public services"),
+    "ofi":("BusSer","Business services"),"ins":("BusSer","Business services"),
+    "rsa":("BusSer","Business services"),"obs":("BusSer","Business services"),
+}
+
 st.set_page_config(
     page_title="GTAP Labor Data Explorer",
     page_icon="🌾",
