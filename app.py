@@ -265,7 +265,7 @@ def render_dashboard(df):
 
     sy = 2024  # Only year available
 
-    with (cols[2] if hs else cols[1]):
+    with (cols[1] if hs else cols[0]):
         if use_agg:
             msecs = sorted(df[sc].dropna().unique().tolist())
             msecs = [s for s in msecs if s]
@@ -280,10 +280,10 @@ def render_dashboard(df):
             sel_sec = st.selectbox("GTAP Sector", ["All sectors"]+secs, key="d_sec",
                 format_func=lambda x: slbls.get(x,x) if x != "All sectors" else "All sectors")
 
-    with (cols[3] if hs else cols[2]):
+    with (cols[2] if hs else cols[1]):
         sel_sk = st.selectbox("Skill Level", ["All"]+sorted(df[sk].dropna().unique().tolist()), key="d_sk")
 
-    with (cols[4] if hs else cols[3]):
+    with (cols[3] if hs else cols[2]):
         sel_bp = st.selectbox("Birthplace", ["All"]+sorted(df[bp].dropna().unique().tolist()), key="d_bp")
 
     # Apply filters
