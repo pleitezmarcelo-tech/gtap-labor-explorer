@@ -266,6 +266,29 @@ Format all numbers with commas."""
 
 # ── INTERACTIVE DASHBOARD ─────────────────────────────────────────────────────
 def render_dashboard(df):
+    # Ensure required columns exist
+    if "scenario" not in df.columns:
+        df = df.copy()
+        df["scenario"] = "baseline"
+    if "year" not in df.columns:
+        df = df.copy()
+        df["year"] = 2024
+    if "workers_base" not in df.columns and "estimated_workers" in df.columns:
+        df = df.copy()
+        df["workers_base"] = df["estimated_workers"]
+    if "gtap_code" not in df.columns and "gtap" in df.columns:
+        df = df.copy()
+        df["gtap_code"] = df["gtap"]
+    if "gtap_sector" not in df.columns and "gtap_desc" in df.columns:
+        df = df.copy()
+        df["gtap_sector"] = df["gtap_desc"]
+    if "skill_level" not in df.columns and "skill" in df.columns:
+        df = df.copy()
+        df["skill_level"] = df["skill"].astype(str)
+    if "birthplace" not in df.columns and "birthplace_label" in df.columns:
+        df = df.copy()
+        df["birthplace"] = df["birthplace_label"]
+
     has_sims = has_simulations(df)
 
     st.markdown("### Interactive Dashboard")
@@ -279,7 +302,6 @@ def render_dashboard(df):
         fc5 = None
 
     with fc1:
-        # Scenario selector — only for baseline tab
         if has_sims:
             scenario_options = sorted(df["scenario"].unique().tolist())
             scenario_labels = {
@@ -294,12 +316,11 @@ def render_dashboard(df):
             sel_scenario = "baseline"
 
     with fc2:
-        # Year — for simulations only 2024 is available
         if has_sims and sel_scenario != "baseline":
             years = [2024]
         else:
-            years = sorted(df[df["scenario"] == "baseline"]["year"]
-                           .unique().tolist())
+            baseline_df = df[df["scenario"] == "baseline"]
+            years = sorted(baseline_df["year"].dropna().unique().tolist()) or [2024]
         sel_year = st.selectbox("Year", years,
                                 index=len(years)-1, key="d_year")
 
