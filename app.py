@@ -120,18 +120,22 @@ GDRIVE_FILE_ID = "1k5aVtkVoBodteUcxC0fP9KJ-GfhKtlbQ"
 
 @st.cache_data(show_spinner="Downloading dataset from Google Drive...")
 def load_from_gdrive(file_id):
-    import requests, io
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    import requests, io, tempfile, os
+    # Use confirm=t to bypass Google virus scan warning for large files
+    url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
     session = requests.Session()
-    response = session.get(url, stream=True)
-    token = None
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            token = value
-    if token:
-        response = session.get(url, params={"confirm": token}, stream=True)
-    return _clean_df(pd.read_csv(io.BytesIO(response.content),
-                                  dtype={"county_fips": str}))
+    # Stream to temp file to handle files >100MB
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        tmp_path = tmp.name
+        response = session.get(url, stream=True, timeout=300)
+        for chunk in response.iter_content(chunk_size=1024*1024):
+            if chunk:
+                tmp.write(chunk)
+    try:
+        df = pd.read_csv(tmp_path, dtype={"county_fips": str})
+    finally:
+        os.unlink(tmp_path)
+    return _clean_df(df)
 
 @st.cache_data(show_spinner="Loading dataset...")
 def load_data(path):
