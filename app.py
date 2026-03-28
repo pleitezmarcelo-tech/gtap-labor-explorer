@@ -783,34 +783,37 @@ with st.sidebar:
     st.markdown("**Data File**")
     data_source = st.radio(
         "Source",
-        ["Google Drive (auto)", "Upload file", "Enter path"],
+        ["Auto (built-in)", "Upload file", "Enter path"],
         label_visibility="collapsed"
     )
-    if data_source == "Google Drive (auto)":
+    if data_source == "Auto (built-in)":
         if st.session_state.df is None:
-            if st.button("Load from Google Drive", use_container_width=True):
-                try:
-                    st.session_state.df = load_from_gdrive(GDRIVE_FILE_ID)
-                    st.success(f"Loaded: {len(st.session_state.df):,} rows")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+            try:
+                st.session_state.df = load_data(
+                    "gtap_master_with_simulations.parquet"
+                )
+                st.success(f"Loaded: {len(st.session_state.df):,} rows")
+            except Exception as e:
+                st.error(f"Could not load built-in data: {e}")
         else:
             st.success(f"Loaded: {len(st.session_state.df):,} rows")
     elif data_source == "Upload file":
-        uploaded = st.file_uploader("Upload CSV", type=["csv"],
-                                    label_visibility="collapsed")
+        uploaded = st.file_uploader(
+            "Upload CSV or Parquet", type=["csv", "parquet"],
+            label_visibility="collapsed"
+        )
         if uploaded:
             st.session_state.df = load_data(uploaded)
             st.success(f"Loaded: {len(st.session_state.df):,} rows")
     else:
-        csv_path = st.text_input(
-            "CSV path",
+        file_path = st.text_input(
+            "File path",
             value="gtap_master_with_simulations.parquet",
             label_visibility="collapsed"
         )
         if st.button("Load", use_container_width=True):
             try:
-                st.session_state.df = load_data(csv_path)
+                st.session_state.df = load_data(file_path)
                 st.success(f"Loaded: {len(st.session_state.df):,} rows")
             except Exception as e:
                 st.error(f"Error: {e}")
