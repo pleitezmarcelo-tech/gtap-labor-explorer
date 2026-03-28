@@ -250,7 +250,7 @@ def render_dashboard(df):
     sec_title = "Model Sectors" if use_agg else "GTAP Sectors"
 
     # Filters
-    nc = 5 if hs else 4
+    nc = 4 if hs else 3
     cols = st.columns(nc)
 
     with cols[0]:
@@ -263,10 +263,7 @@ def render_dashboard(df):
             ss = "baseline"
 
 
-    with (cols[1] if hs else cols[0]):
-        yrs = [2024] if (hs and ss != "baseline") else (
-            sorted(df[df["scenario"]=="baseline"]["year"].dropna().unique().tolist()) or [2024])
-        sy = st.selectbox("Year", yrs, index=len(yrs)-1, key="d_year")
+    sy = 2024  # Only year available
 
     with (cols[2] if hs else cols[1]):
         if use_agg:
