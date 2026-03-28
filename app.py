@@ -318,13 +318,15 @@ def render_dashboard(df):
             st.info("No county data for this combination of filters.")
 
     with bc:
+        # Bar chart title based on aggregation level
+        sec_title = "Model Sectors" if use_agg else "GTAP Sectors"
         if is_chg:
             if sel_sec == "All sectors":
-                bd = (filt.groupby(["gtap_code","gtap_sector"])["workers_change"]
+                bd = (filt.groupby([sc_col, sd_col])["workers_change"]
                       .sum().reset_index().sort_values("workers_change").head(15))
-                bd["label"] = bd["gtap_code"] + " — " + bd["gtap_sector"].str[:18]
+                bd["label"] = bd[sc_col] + " — " + bd[sd_col].str[:20]
                 fig_bar = px.bar(bd, x="workers_change", y="label", orientation="h",
-                    title="Top 15 Sectors by Change", color="workers_change",
+                    title=f"Top 15 {sec_title} by Change", color="workers_change",
                     color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
                     labels={"workers_change":"Change","label":""})
             else:
@@ -338,15 +340,15 @@ def render_dashboard(df):
             if wc not in filt.columns:
                 fig_bar = px.bar(title="No data")
             elif sel_sec == "All sectors":
-                bd = (filt.groupby([sc_col,sd_col])[wc]
-                      .sum().reset_index().sort_values(wc,ascending=False).head(15))
-                bd["label"] = bd["gtap_code"] + " — " + bd["gtap_sector"].str[:18]
+                bd = (filt.groupby([sc_col, sd_col])[wc]
+                      .sum().reset_index().sort_values(wc, ascending=False).head(15))
+                bd["label"] = bd[sc_col] + " — " + bd[sd_col].str[:20]
                 fig_bar = px.bar(bd, x=wc, y="label", orientation="h",
-                    title=f"Top 15 Sectors — {sel_year}", color=wc,
+                    title=f"Top 15 {sec_title} — {sel_year}", color=wc,
                     color_continuous_scale="Blues", labels={wc:"Workers","label":""})
             else:
                 bd = (filt.groupby("state")[wc].sum().reset_index()
-                      .sort_values(wc,ascending=False).head(15))
+                      .sort_values(wc, ascending=False).head(15))
                 fig_bar = px.bar(bd, x=wc, y="state", orientation="h",
                     title=f"Top 15 States — {sel_sec} {sel_year}", color=wc,
                     color_continuous_scale="Blues", labels={wc:"Workers","state":"State"})
