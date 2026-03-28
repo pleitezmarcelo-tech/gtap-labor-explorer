@@ -769,7 +769,7 @@ with st.sidebar:
         df_s = st.session_state.df
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.markdown("**Dataset Summary**")
-        try:
+try:
     if "scenario" in df_s.columns and "workers_base" in df_s.columns:
         val = int(df_s[(df_s["scenario"]=="baseline") &
                        (df_s["year"]==2024)]["workers_base"].sum())
