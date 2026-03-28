@@ -1,46 +1,31 @@
 import streamlit as st
+import os
+import json
+import pandas as pd
+import anthropic
+import plotly.express as px
+from tools import TOOL_DEFINITIONS, execute_tool
 
-st.title("Import Diagnostics")
+st.title("GTAP - Step 2")
 
-steps = []
+# Test session state
+for k, v in [("messages",[]), ("df",None), ("figures",{})]:
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-try:
-    import os, json
-    steps.append("✅ os, json")
-except Exception as e:
-    steps.append(f"❌ os/json: {e}")
+st.write("✅ Session state OK")
 
-try:
-    import pandas as pd
-    steps.append("✅ pandas")
-except Exception as e:
-    steps.append(f"❌ pandas: {e}")
+# Test constants
+PARQUET_REPO = "/mount/src/gtap-labor-explorer/gtap_master_with_simulations.parquet"
+PARQUET_LOCAL = "gtap_master_with_simulations.parquet"
+path = PARQUET_REPO if os.path.exists(PARQUET_REPO) else PARQUET_LOCAL
+st.write(f"✅ Parquet path: {path}")
+st.write(f"✅ File exists: {os.path.exists(path)}")
 
-try:
-    import anthropic
-    steps.append("✅ anthropic")
-except Exception as e:
-    steps.append(f"❌ anthropic: {e}")
+# Test load
+if st.button("Load parquet"):
+    df = pd.read_parquet(path)
+    st.write(f"✅ Loaded {len(df):,} rows")
+    st.write(f"Columns: {list(df.columns)[:6]}")
 
-try:
-    import plotly.express as px
-    steps.append("✅ plotly.express")
-except Exception as e:
-    steps.append(f"❌ plotly.express: {e}")
-
-try:
-    import plotly.graph_objects as go
-    steps.append("✅ plotly.graph_objects")
-except Exception as e:
-    steps.append(f"❌ plotly.graph_objects: {e}")
-
-try:
-    from tools import TOOL_DEFINITIONS, execute_tool
-    steps.append("✅ tools")
-except Exception as e:
-    steps.append(f"❌ tools: {e}")
-
-for s in steps:
-    st.write(s)
-
-st.success("All imports attempted")
+st.success("Step 2 complete")
