@@ -8,7 +8,7 @@ import pandas as pd
 import anthropic
 from tools import TOOL_DEFINITIONS, execute_tool
 
-# ── Module-level constants ────────────────────────────────────────────────────
+# ?? Module-level constants ????????????????????????????????????????????????????
 PARQUET_REPO  = "/mount/src/gtap-labor-explorer/gtap_master_with_simulations.parquet"
 PARQUET_LOCAL = "gtap_master_with_simulations.parquet"
 
@@ -66,15 +66,15 @@ GTAP_TO_MODEL = {
 
 SMETA = {
     "baseline":   {"label":"Baseline (Observed)",  "color":"#2E5496"},
-    "JPM_sim03":  {"label":"JPM 2025 — sim03",      "color":"#c0392b"},
-    "JPM_sim03b": {"label":"JPM 2025 — sim03b",     "color":"#e74c3c"},
-    "JPM_sim03c": {"label":"JPM 2025 — sim03c",     "color":"#e67e22"},
-    "USMCA_SR":   {"label":"USMCA — Short Run",     "color":"#8e44ad"},
-    "USMCA_LR":   {"label":"USMCA — Long Run",      "color":"#2980b9"},
+    "JPM_sim03":  {"label":"JPM 2025 -- sim03",      "color":"#c0392b"},
+    "JPM_sim03b": {"label":"JPM 2025 -- sim03b",     "color":"#e74c3c"},
+    "JPM_sim03c": {"label":"JPM 2025 -- sim03c",     "color":"#e67e22"},
+    "USMCA_SR":   {"label":"USMCA -- Short Run",     "color":"#8e44ad"},
+    "USMCA_LR":   {"label":"USMCA -- Long Run",      "color":"#2980b9"},
 }
 
-# ── Page config ───────────────────────────────────────────────────────────────
-st.set_page_config(page_title="GTAP Labor Data Explorer", page_icon="🌾",
+# ?? Page config ???????????????????????????????????????????????????????????????
+st.set_page_config(page_title="GTAP Labor Data Explorer", page_icon="?",
                    layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
@@ -90,12 +90,12 @@ st.markdown("""<style>
 .ss{background:#f8f9fa;border-radius:8px;padding:.8rem;margin-bottom:.8rem}
 </style>""", unsafe_allow_html=True)
 
-# ── Session state ─────────────────────────────────────────────────────────────
+# ?? Session state ?????????????????????????????????????????????????????????????
 for k, v in [("messages",[]), ("df",None), ("figures",{})]:
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# ?? Data loading ??????????????????????????????????????????????????????????????
 @st.cache_data(show_spinner="Loading dataset...")
 def load_parquet():
     path = PARQUET_REPO if os.path.exists(PARQUET_REPO) else PARQUET_LOCAL
@@ -120,7 +120,7 @@ def _prep(df):
         df["scenario"] = "baseline"
     return df
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ?? Helpers ???????????????????????????????????????????????????????????????????
 def has_sims(df): return "scenario" in df.columns and df["scenario"].nunique() > 1
 def wcol(s):      return "workers_base" if s == "baseline" else "workers_sim"
 def bpcol(df):    return "birthplace" if "birthplace" in df.columns else "birthplace_label"
@@ -135,7 +135,7 @@ def osecs(df):
     return r
 
 def slmap(df):
-    return {r["gtap_code"]: f'{r["gtap_code"]} — {r["gtap_sector"]}'
+    return {r["gtap_code"]: f'{r["gtap_code"]} -- {r["gtap_sector"]}'
             for _, r in df[["gtap_code","gtap_sector"]].drop_duplicates().iterrows()
             if pd.notna(r["gtap_code"]) and pd.notna(r["gtap_sector"])}
 
@@ -148,7 +148,7 @@ def add_model_cols(df):
                                      if pd.notna(x) else "")
     return df
 
-# ── Claude agent ──────────────────────────────────────────────────────────────
+# ?? Claude agent ??????????????????????????????????????????????????????????????
 def run_agent(msg, df, key, ukey):
     client = anthropic.Anthropic(api_key=key)
     hist = [{"role":m["role"],"content":m["content"]}
@@ -180,7 +180,7 @@ def run_agent(msg, df, key, ukey):
         msgs.append({"role":"user","content":tr})
     return text, figs
 
-# ── Dashboard ─────────────────────────────────────────────────────────────────
+# ?? Dashboard ?????????????????????????????????????????????????????????????????
 def render_dashboard(df):
     import plotly.express as px
     hs  = has_sims(df)
@@ -222,7 +222,7 @@ def render_dashboard(df):
         if use_agg:
             msecs = sorted(df[sc].dropna().unique().tolist())
             msecs = [s for s in msecs if s]
-            mlmap = {r[sc]: f'{r[sc]} — {r[sd]}'
+            mlmap = {r[sc]: f'{r[sc]} -- {r[sd]}'
                      for _, r in df[[sc,sd]].drop_duplicates().iterrows()
                      if pd.notna(r[sc]) and r[sc]}
             sel_sec = st.selectbox("Model Sector", ["All sectors"]+msecs, key="d_sec",
@@ -273,8 +273,8 @@ def render_dashboard(df):
         fb  = filt[filt[bp].str.contains("Foreign",na=False)][wc].sum() if wc in filt.columns else 0
         skv = filt[filt[sk]=="Skilled"][wc].sum() if wc in filt.columns else 0
         for c,v,l in [(k1,f"{tot:,}",f"Workers {sy}"),
-                      (k2,f"{fb/tot*100:.1f}%" if tot else "—","Foreign Born"),
-                      (k3,f"{skv/tot*100:.1f}%" if tot else "—","Skilled"),
+                      (k2,f"{fb/tot*100:.1f}%" if tot else "--","Foreign Born"),
+                      (k3,f"{skv/tot*100:.1f}%" if tot else "--","Skilled"),
                       (k4,str(filt["county_fips"].nunique()),"Counties")]:
             with c: st.markdown(mc(v,l), unsafe_allow_html=True)
 
@@ -287,12 +287,12 @@ def render_dashboard(df):
         if ic:
             ca = filt.groupby(["county_fips","county_name","state"])["workers_change"].sum().reset_index()
             cc,cs,cm,cl = "workers_change","RdYlGn",0,"Employment Change"
-            mt = f"Employment Change — {SMETA.get(ss,{}).get('label',ss)}"
+            mt = f"Employment Change -- {SMETA.get(ss,{}).get('label',ss)}"
         else:
             ca = filt.groupby(["county_fips","county_name","state"])[wc].sum().reset_index() if wc in filt.columns else pd.DataFrame()
             if len(ca) and wc in ca.columns: ca = ca[ca[wc]>0]
             cc,cs,cm,cl = wc,"Blues",None,"Workers"
-            mt = f"Workers by County — {sy}" + (f" | {sel_sec}" if sel_sec != "All sectors" else "")
+            mt = f"Workers by County -- {sy}" + (f" | {sel_sec}" if sel_sec != "All sectors" else "")
         if len(ca) > 0 and "county_fips" in ca.columns:
             ca = ca[ca["county_fips"].str.len()==5]
         if len(ca) > 0:
@@ -312,7 +312,7 @@ def render_dashboard(df):
         if ic:
             if sel_sec == "All sectors":
                 bd = filt.groupby([sc,sd])["workers_change"].sum().reset_index().sort_values("workers_change").head(15)
-                bd["label"] = bd[sc].astype(str) + " — " + bd[sd].astype(str).str[:20]
+                bd["label"] = bd[sc].astype(str) + " -- " + bd[sd].astype(str).str[:20]
                 fig = px.bar(bd, x="workers_change", y="label", orientation="h",
                     title=f"Top 15 {sec_title} by Change", color="workers_change",
                     color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
@@ -320,7 +320,7 @@ def render_dashboard(df):
             else:
                 bd = filt.groupby("state")["workers_change"].sum().reset_index().sort_values("workers_change").head(15)
                 fig = px.bar(bd, x="workers_change", y="state", orientation="h",
-                    title=f"Top 15 States — {sel_sec}",
+                    title=f"Top 15 States -- {sel_sec}",
                     color="workers_change", color_continuous_scale="RdYlGn",
                     color_continuous_midpoint=0, labels={"workers_change":"Change","state":"State"})
         else:
@@ -328,14 +328,14 @@ def render_dashboard(df):
                 fig = px.bar(title="No data")
             elif sel_sec == "All sectors":
                 bd = filt.groupby([sc,sd])[wc].sum().reset_index().sort_values(wc,ascending=False).head(15)
-                bd["label"] = bd[sc].astype(str) + " — " + bd[sd].astype(str).str[:20]
+                bd["label"] = bd[sc].astype(str) + " -- " + bd[sd].astype(str).str[:20]
                 fig = px.bar(bd, x=wc, y="label", orientation="h",
-                    title=f"Top 15 {sec_title} — {sy}", color=wc,
+                    title=f"Top 15 {sec_title} -- {sy}", color=wc,
                     color_continuous_scale="Blues", labels={wc:"Workers","label":""})
             else:
                 bd = filt.groupby("state")[wc].sum().reset_index().sort_values(wc,ascending=False).head(15)
                 fig = px.bar(bd, x=wc, y="state", orientation="h",
-                    title=f"Top 15 States — {sel_sec} {sy}", color=wc,
+                    title=f"Top 15 States -- {sel_sec} {sy}", color=wc,
                     color_continuous_scale="Blues", labels={wc:"Workers","state":"State"})
         fig.update_layout(height=430, showlegend=False, plot_bgcolor="white",
             paper_bgcolor="white", coloraxis_showscale=False,
@@ -352,7 +352,7 @@ def render_dashboard(df):
         if sel_sk  != "All":         tb = tb[tb[sk]==sel_sk]
         if sel_bp  != "All":         tb = tb[tb[bp]==sel_bp]
         td = tb.groupby("year")["workers_base"].sum().reset_index()
-        fig = px.line(td, x="year", y="workers_base", title="Baseline Trend 2021–2024",
+        fig = px.line(td, x="year", y="workers_base", title="Baseline Trend 2021-2024",
             markers=True, color_discrete_sequence=["#2E5496"],
             labels={"workers_base":"Workers","year":"Year"})
         if ss != "baseline" and hs and "workers_sim" in filt.columns:
@@ -382,7 +382,7 @@ def render_dashboard(df):
                 sd2 = filt.groupby([sk,bp])[wcc].sum().reset_index()
                 sd2["group"] = sd2[sk] + " / " + sd2[bp]
                 fig = px.pie(sd2, values=wcc, names="group",
-                    title=f"Skill x Birthplace — {sy}",
+                    title=f"Skill x Birthplace -- {sy}",
                     color_discrete_sequence=px.colors.qualitative.Set2)
             else:
                 fig = px.pie(title="No data")
@@ -393,7 +393,7 @@ def render_dashboard(df):
     # Scenario comparison
     if hs:
         st.markdown("---")
-        st.markdown("#### Scenario Comparison — 2024")
+        st.markdown("#### Scenario Comparison -- 2024")
         comp = []
         for scen in [s for s in df["scenario"].unique() if s != "baseline"]:
             sf = df[df["scenario"]==scen]
@@ -417,7 +417,7 @@ def render_dashboard(df):
                 margin=dict(t=40,b=10,l=10,r=10), title_font_size=14)
             st.plotly_chart(fig, key=f"cmp_{sel_sec}_{sel_sk}_{sel_bp}_{agg}")
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ?? Sidebar ???????????????????????????????????????????????????????????????????
 with st.sidebar:
     st.markdown("## Configuration")
     st.markdown('<div class="ss">', unsafe_allow_html=True)
@@ -479,8 +479,8 @@ with st.sidebar:
     if st.button("Clear conversation"):
         st.session_state.messages = []; st.session_state.figures = {}; st.rerun()
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown('<div class="mh">🌾 GTAP Labor Data Explorer</div>', unsafe_allow_html=True)
+# ?? Header ????????????????????????????????????????????????????????????????????
+st.markdown('<div class="mh">? GTAP Labor Data Explorer</div>', unsafe_allow_html=True)
 st.markdown('<div class="sh">Interactive dashboard and conversational analysis '
             'for 65 GTAP sectors across U.S. counties.</div>', unsafe_allow_html=True)
 
@@ -489,7 +489,7 @@ if st.session_state.df is None:
     st.stop()
 
 df = st.session_state.df
-tab1, tab2 = st.tabs(["📊 Interactive Dashboard", "💬 Ask Claude"])
+tab1, tab2 = st.tabs(["? Interactive Dashboard", "? Ask Claude"])
 
 with tab1:
     render_dashboard(df)
@@ -503,10 +503,10 @@ with tab2:
     sk2    = dl[dl["skill_level"]=="Skilled"]["workers_base"].sum() if "workers_base" in dl.columns else 0
     c1,c2,c3,c4,c5 = st.columns(5)
     for c,v,l in [(c1,f"{int(tot):,}",f"Baseline {latest}"),
-                  (c2,f"{fb2/tot*100:.1f}%" if tot else "—","Foreign Born"),
-                  (c3,f"{sk2/tot*100:.1f}%" if tot else "—","Skilled"),
-                  (c4,str(df["gtap_code"].nunique()) if "gtap_code" in df.columns else "—","GTAP Sectors"),
-                  (c5,f"{df['county_fips'].nunique():,}" if "county_fips" in df.columns else "—","Counties")]:
+                  (c2,f"{fb2/tot*100:.1f}%" if tot else "--","Foreign Born"),
+                  (c3,f"{sk2/tot*100:.1f}%" if tot else "--","Skilled"),
+                  (c4,str(df["gtap_code"].nunique()) if "gtap_code" in df.columns else "--","GTAP Sectors"),
+                  (c5,f"{df['county_fips'].nunique():,}" if "county_fips" in df.columns else "--","Counties")]:
         with c: st.markdown(mc(v,l), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
