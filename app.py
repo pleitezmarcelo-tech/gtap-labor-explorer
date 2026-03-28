@@ -93,6 +93,10 @@ def _prep(df):
     for c in ["workers_base","workers_sim","workers_change","pct_change","lq"]:
         if c in df.columns: df[c]=pd.to_numeric(df[c],errors="coerce")
     if "scenario" not in df.columns: df["scenario"]="baseline"
+    # Pre-compute model sector columns once at load time
+    if "gtap_code" in df.columns:
+        df["_msc"]=df["gtap_code"].map(lambda x: GTAP_TO_MODEL.get(str(x),(str(x),""))[0] if pd.notna(x) else "")
+        df["_msd"]=df["gtap_code"].map(lambda x: GTAP_TO_MODEL.get(str(x),("",str(x)))[1] if pd.notna(x) else "")
     return df
 
 def has_sims(df): return "scenario" in df.columns and df["scenario"].nunique()>1
@@ -138,7 +142,6 @@ def run_agent(msg,df,key,ukey):
 
 def render_dashboard(df):
     import plotly.express as px
-    df=add_model_cols(df)
     hs=has_sims(df); bp=bpcol(df); sk="skill_level"
     st.markdown("### Interactive Dashboard")
     st.caption("All charts update in real time.")
