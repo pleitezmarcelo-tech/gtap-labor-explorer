@@ -394,24 +394,30 @@ def render_dashboard(df):
     # Trend + breakdown
     tc, pc = st.columns(2)
     with tc:
-        tb = df[df["scenario"]=="baseline"].copy()
-        if sel_sec != "All sectors": tb = tb[tb[sc]==sel_sec]
-        if sel_sk  != "All":         tb = tb[tb[sk]==sel_sk]
-        if sel_bp  != "All":         tb = tb[tb[bp]==sel_bp]
-        td = tb.groupby("year")["workers_base"].sum().reset_index()
-        fig = px.line(td, x="year", y="workers_base", title="Baseline Trend 20212024",
-            markers=True, color_discrete_sequence=["#2E5496"],
-            labels={"workers_base":"Workers","year":"Year"})
-        if ss != "baseline" and hs and "workers_sim" in filt.columns:
-            sv = filt["workers_sim"].fillna(0).sum()
-            fig.add_scatter(x=[2024], y=[sv], mode="markers",
-                marker=dict(size=14,color=col,symbol="diamond"),
-                name=SMETA.get(ss,{}).get("label",ss))
+        # Top 15 states for selected filters
+        if ic:
+            ts = filt.groupby("state")["workers_change"].sum().reset_index()
+            ts = ts.reindex(ts["workers_change"].abs().sort_values(ascending=False).index).head(15)
+            ts = ts.sort_values("workers_change")
+            fig = px.bar(ts, x="workers_change", y="state", orientation="h",
+                title="Top 15 States by Employment Change",
+                color="workers_change", color_continuous_scale="RdYlGn",
+                color_continuous_midpoint=0,
+                labels={"workers_change":"Change","state":"State"})
+        else:
+            wcc = wc if wc in filt.columns else "workers_base"
+            ts = filt.groupby("state")[wcc].sum().reset_index()
+            ts = ts.sort_values(wcc, ascending=False).head(15).sort_values(wcc)
+            fig = px.bar(ts, x=wcc, y="state", orientation="h",
+                title="Top 15 States -- 2024",
+                color=wcc, color_continuous_scale="Blues",
+                labels={wcc:"Workers","state":"State"})
         fig.update_layout(height=280, plot_bgcolor="white", paper_bgcolor="white",
-            yaxis=dict(tickformat=",d",gridcolor="#f0f0f0"),
-            title_font_size=14, margin=dict(t=40,b=30))
-        st.plotly_chart(fig, key=f"tr_{ss}_{sel_sec}_{sel_sk}_{sel_bp}_{agg}")
-
+            coloraxis_showscale=False,
+            xaxis=dict(tickformat=",d", gridcolor="#f0f0f0"),
+            yaxis=dict(autorange="reversed"),
+            title_font_size=14, margin=dict(t=40,b=10,l=10,r=10))
+        st.plotly_chart(fig, key=f"ts_{ss}_{sel_sec}_{sel_sk}_{sel_bp}_{agg}")
     with pc:
         if ic:
             sd2 = filt.groupby([sk,bp])["workers_change"].sum().reset_index()
