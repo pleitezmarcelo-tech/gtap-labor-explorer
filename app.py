@@ -116,9 +116,9 @@ for key, default in [("messages", []), ("df", None), ("figures", {})]:
 
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
-GDRIVE_FILE_ID = "1uwwbrY1nOy3Ks3RRvEi75W0L4CODLWM_"
+GDRIVE_FILE_ID = "1k5aVtkVoBodteUcxC0fP9KJ-GfhKtlbQ"
 
-@st.cache_data(show_spinner="Downloading dataset from Google Drive...")
+@st.cache_data(show_spinner="Downloading dataset from Google Drive...", ttl=0)
 def load_from_gdrive(file_id):
     import requests, io
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
