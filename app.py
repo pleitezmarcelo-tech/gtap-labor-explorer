@@ -116,9 +116,9 @@ for key, default in [("messages", []), ("df", None), ("figures", {})]:
 
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
-GDRIVE_FILE_ID = "1k5aVtkVoBodteUcxC0fP9KJ-GfhKtlbQ"
+GDRIVE_FILE_ID = "1uwwbrY1nOy3Ks3RRvEi75W0L4CODLWM_"
 
-@st.cache_data(show_spinner="Downloading dataset from Google Drive...", ttl=0)
+@st.cache_data(show_spinner="Downloading dataset from Google Drive...")
 def load_from_gdrive(file_id):
     import requests, io
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -138,30 +138,22 @@ def load_data(path):
     return _clean_df(pd.read_csv(path, dtype={"county_fips": str}))
 
 def _clean_df(df):
-    # Handle county_fips safely
-    if "county_fips" in df.columns:
-        df["county_fips"] = (df["county_fips"].fillna("").astype(str)
-                             .str.strip().str.replace(".0", "", regex=False)
-                             .str.zfill(5))
-        df.loc[df["county_fips"] == "00000", "county_fips"] = ""
-
+    df["county_fips"] = df["county_fips"].astype(str).str.zfill(5)
     for col in ["workers_base", "workers_sim", "workers_change",
                 "pct_change", "lq", "effective_delta"]:
         if col in df.columns:
             df[col] = pd.to_numeric(
                 df[col].astype(str).str.replace(",", ""), errors="coerce"
             )
-
-    # Legacy support
+    # Legacy support: if file has estimated_workers instead of workers_base
     if "estimated_workers" in df.columns and "workers_base" not in df.columns:
         df["workers_base"] = pd.to_numeric(
             df["estimated_workers"].astype(str).str.replace(",", ""),
             errors="coerce"
         ).fillna(0)
-
+    # Add scenario column if missing (old CSV without simulations)
     if "scenario" not in df.columns:
         df["scenario"] = "baseline"
-
     return df
 
 def has_simulations(df):
@@ -769,17 +761,17 @@ with st.sidebar:
         df_s = st.session_state.df
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.markdown("**Dataset Summary**")
-try:
-        if "scenario" in df_s.columns and "workers_base" in df_s.columns:
-            val = int(df_s[(df_s["scenario"]=="baseline") &
-                           (df_s["year"]==2024)]["workers_base"].sum())
-        elif "workers_base" in df_s.columns:
-        val = int(df_s[df_s["year"]==2024]["workers_base"].sum())
-        else:
-            val = 0
-        st.metric("Baseline Workers (2024)", f"{val:,}")
-except Exception:
-        st.metric("Baseline Workers (2024)", "—")
+        try:
+            if "scenario" in df_s.columns and "workers_base" in df_s.columns:
+                val = int(df_s[(df_s["scenario"]=="baseline") &
+                               (df_s["year"]==2024)]["workers_base"].sum())
+            elif "workers_base" in df_s.columns:
+                val = int(df_s[df_s["year"]==2024]["workers_base"].sum())
+            else:
+                val = 0
+            st.metric("Baseline Workers (2024)", f"{val:,}")
+        except Exception:
+            st.metric("Baseline Workers (2024)", "—")
         st.metric("GTAP Sectors", df_s["gtap_code"].nunique())
         st.metric("Counties",     df_s["county_fips"].nunique())
         if has_simulations(df_s):
