@@ -138,22 +138,30 @@ def load_data(path):
     return _clean_df(pd.read_csv(path, dtype={"county_fips": str}))
 
 def _clean_df(df):
-    df["county_fips"] = df["county_fips"].astype(str).str.zfill(5)
+    # Handle county_fips safely
+    if "county_fips" in df.columns:
+        df["county_fips"] = (df["county_fips"].fillna("").astype(str)
+                             .str.strip().str.replace(".0", "", regex=False)
+                             .str.zfill(5))
+        df.loc[df["county_fips"] == "00000", "county_fips"] = ""
+
     for col in ["workers_base", "workers_sim", "workers_change",
                 "pct_change", "lq", "effective_delta"]:
         if col in df.columns:
             df[col] = pd.to_numeric(
                 df[col].astype(str).str.replace(",", ""), errors="coerce"
             )
-    # Legacy support: if file has estimated_workers instead of workers_base
+
+    # Legacy support
     if "estimated_workers" in df.columns and "workers_base" not in df.columns:
         df["workers_base"] = pd.to_numeric(
             df["estimated_workers"].astype(str).str.replace(",", ""),
             errors="coerce"
         ).fillna(0)
-    # Add scenario column if missing (old CSV without simulations)
+
     if "scenario" not in df.columns:
         df["scenario"] = "baseline"
+
     return df
 
 def has_simulations(df):
