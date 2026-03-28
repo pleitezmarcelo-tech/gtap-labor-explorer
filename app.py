@@ -769,11 +769,17 @@ with st.sidebar:
         df_s = st.session_state.df
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.markdown("**Dataset Summary**")
-        baseline_workers = df_s[df_s["scenario"] == "baseline"]["workers_base"].sum() \
-            if "scenario" in df_s.columns \
-            else df_s["workers_base"].sum()
-        st.metric("Baseline Workers (2024)",
-                  f"{int(df_s[df_s['year']==2024]['workers_base'].sum() if 'year' in df_s.columns else baseline_workers):,}")
+        try:
+    if "scenario" in df_s.columns and "workers_base" in df_s.columns:
+        val = int(df_s[(df_s["scenario"]=="baseline") &
+                       (df_s["year"]==2024)]["workers_base"].sum())
+    elif "workers_base" in df_s.columns:
+        val = int(df_s[df_s["year"]==2024]["workers_base"].sum())
+    else:
+        val = 0
+    st.metric("Baseline Workers (2024)", f"{val:,}")
+except Exception:
+    st.metric("Baseline Workers (2024)", "—")
         st.metric("GTAP Sectors", df_s["gtap_code"].nunique())
         st.metric("Counties",     df_s["county_fips"].nunique())
         if has_simulations(df_s):
