@@ -116,15 +116,21 @@ for key, default in [("messages", []), ("df", None), ("figures", {})]:
 
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
-GDRIVE_FILE_ID = "1k5aVtkVoBodteUcxC0fP9KJ-GfhKtlbQ"
+GDRIVE_FILE_ID = "1k5aVtkVoBodteUcxC0fP9KJ-GfhKtlbQ"  # kept for reference
 
 @st.cache_data(show_spinner="Downloading dataset from Google Drive...")
 def load_from_gdrive(file_id):
-    import requests, io, tempfile, os
-    # Use confirm=t to bypass Google virus scan warning for large files
+    """Load parquet file from GitHub repo (bundled with app)."""
+    import os
+    # Try parquet first (fast, small file bundled in repo)
+    parquet_path = "gtap_master_with_simulations.parquet"
+    if os.path.exists(parquet_path):
+        df = pd.read_parquet(parquet_path)
+        return _clean_df(df)
+    # Fallback: CSV from Google Drive
+    import requests, io, tempfile
     url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
     session = requests.Session()
-    # Stream to temp file to handle files >100MB
     with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
         tmp_path = tmp.name
         response = session.get(url, stream=True, timeout=300)
@@ -139,6 +145,8 @@ def load_from_gdrive(file_id):
 
 @st.cache_data(show_spinner="Loading dataset...")
 def load_data(path):
+    if path.endswith(".parquet"):
+        return _clean_df(pd.read_parquet(path))
     return _clean_df(pd.read_csv(path, dtype={"county_fips": str}))
 
 def _clean_df(df):
@@ -797,7 +805,7 @@ with st.sidebar:
     else:
         csv_path = st.text_input(
             "CSV path",
-            value="gtap_master_with_simulations.csv",
+            value="gtap_master_with_simulations.parquet",
             label_visibility="collapsed"
         )
         if st.button("Load", use_container_width=True):
