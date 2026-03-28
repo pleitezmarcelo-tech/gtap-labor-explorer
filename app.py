@@ -156,7 +156,6 @@ def run_agent(msg,df,key,ukey):
 
 def render_dashboard(df):
     import plotly.express as px
-    df = preaggregate(df)
     hs=has_sims(df); bp=bpcol(df); sk="skill_level"
     st.markdown("### Interactive Dashboard")
     st.caption("All charts update in real time.")
