@@ -788,13 +788,18 @@ with st.sidebar:
     )
     if data_source == "Auto (built-in)":
         if st.session_state.df is None:
-            try:
-                st.session_state.df = load_data(
-                    "gtap_master_with_simulations.parquet"
-                )
-                st.success(f"Loaded: {len(st.session_state.df):,} rows")
-            except Exception as e:
-                st.error(f"Could not load built-in data: {e}")
+            if st.button("Load Data", use_container_width=True):
+                try:
+                    import os
+                    # Try repo path (Streamlit Cloud)
+                    repo_path = "/mount/src/gtap-labor-explorer/gtap_master_with_simulations.parquet"
+                    local_path = "gtap_master_with_simulations.parquet"
+                    path = repo_path if os.path.exists(repo_path) else local_path
+                    st.session_state.df = load_data(path)
+                    st.success(f"Loaded: {len(st.session_state.df):,} rows")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
         else:
             st.success(f"Loaded: {len(st.session_state.df):,} rows")
     elif data_source == "Upload file":
@@ -891,8 +896,7 @@ st.markdown(
 )
 
 if st.session_state.df is None:
-    st.info("Load your data file using the sidebar to get started. "
-            "Use **gtap_master_with_simulations.csv** to include simulation scenarios.")
+    st.info("Click **Load Data** in the sidebar to get started.")
     st.stop()
 
 df = st.session_state.df
