@@ -493,7 +493,7 @@ with st.sidebar:
     if src == "Auto (built-in)":
         if st.session_state.df is None:
             if st.button("Load Data"):
-                st.session_state.df = load_parquet(); st.rerun()
+                st.session_state.df = load_dashboard(); st.rerun()
         else:
             st.success(f"Loaded: {len(st.session_state.df):,} rows")
     elif src == "Upload file":
