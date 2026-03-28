@@ -450,7 +450,7 @@ with st.sidebar:
 
     if src == "Auto (built-in)":
         if st.session_state.df is None:
-            if st.button("Load Data", use_container_width=True):
+            if st.button("Load Data"):
                 try:
                     st.session_state.df = load_parquet()
                     st.rerun()
@@ -465,7 +465,7 @@ with st.sidebar:
             st.rerun()
     else:
         fp = st.text_input("Path", value=PARQUET_LOCAL, label_visibility="collapsed")
-        if st.button("Load", use_container_width=True):
+        if st.button("Load"):
             try:
                 st.session_state.df = load_file(fp, fp)
                 st.rerun()
@@ -505,11 +505,11 @@ with st.sidebar:
         "Compare employment change across all scenarios",
         "Show USMCA long run impact on agriculture",
     ]:
-        if st.button(ex, use_container_width=True, key=f"ex_{ex[:20]}"):
+        if st.button(ex, key=f"ex_{ex[:20]}"):
             st.session_state["prefill"] = ex
 
     st.markdown("---")
-    if st.button("Clear conversation", use_container_width=True):
+    if st.button("Clear conversation"):
         st.session_state.messages = []
         st.session_state.figures = {}
         st.rerun()
