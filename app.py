@@ -332,7 +332,7 @@ def render_dashboard(df):
                 coloraxis_colorbar=dict(title=clbl,tickformat=",d"),
                 title_font_size=14
             )
-            st.plotly_chart(fig_map, use_container_width=True,
+            st.plotly_chart(fig_map, width='stretch',
                 key=f"map_{sel_scen}_{sel_year}_{sel_sec}_{sel_sk}_{sel_bp}")
         else:
             st.info("No county data for this combination of filters.")
@@ -383,7 +383,7 @@ def render_dashboard(df):
             yaxis=dict(autorange="reversed"),
             title_font_size=14, margin=dict(l=10,r=10,t=40,b=10)
         )
-        st.plotly_chart(fig_bar, use_container_width=True,
+        st.plotly_chart(fig_bar, width='stretch',
             key=f"bar_{sel_scen}_{sel_year}_{sel_sec}_{sel_sk}_{sel_bp}")
 
     # ── Trend + Pie ───────────────────────────────────────────────────────────
@@ -406,7 +406,7 @@ def render_dashboard(df):
         fig_tr.update_layout(height=280, plot_bgcolor="white", paper_bgcolor="white",
             yaxis=dict(tickformat=",d",gridcolor="#f0f0f0"),
             title_font_size=14, margin=dict(t=40,b=30))
-        st.plotly_chart(fig_tr, use_container_width=True,
+        st.plotly_chart(fig_tr, width='stretch',
             key=f"tr_{sel_scen}_{sel_sec}_{sel_sk}_{sel_bp}")
 
     with pc:
@@ -435,7 +435,7 @@ def render_dashboard(df):
                 fig_pc = px.pie(title="No data")
             fig_pc.update_layout(height=280, title_font_size=14,
                 margin=dict(t=40,b=10), legend=dict(font_size=11))
-        st.plotly_chart(fig_pc, use_container_width=True,
+        st.plotly_chart(fig_pc, width='stretch',
             key=f"pc_{sel_scen}_{sel_year}_{sel_sec}_{sel_sk}_{sel_bp}")
 
     # ── Scenario comparison ───────────────────────────────────────────────────
@@ -466,7 +466,7 @@ def render_dashboard(df):
                 plot_bgcolor="white", paper_bgcolor="white",
                 xaxis=dict(tickformat=",d",gridcolor="#f0f0f0"),
                 margin=dict(t=40,b=10,l=10,r=10), title_font_size=14)
-            st.plotly_chart(fig_cmp, use_container_width=True,
+            st.plotly_chart(fig_cmp, width='stretch',
                 key=f"cmp_{sel_sec}_{sel_sk}_{sel_bp}")
 
 
@@ -500,7 +500,7 @@ with st.sidebar:
 
     if src == "Auto (built-in)":
         if st.session_state.df is None:
-            if st.button("Load Data", use_container_width=True):
+            if st.button("Load Data", width='stretch'):
                 try:
                     st.session_state.df = load_parquet()
                     st.rerun()
@@ -517,7 +517,7 @@ with st.sidebar:
 
     else:
         fp = st.text_input("Path", value=PARQUET_LOCAL, label_visibility="collapsed")
-        if st.button("Load", use_container_width=True):
+        if st.button("Load", width='stretch'):
             try:
                 st.session_state.df = load_file(fp, fp)
                 st.rerun()
@@ -559,11 +559,11 @@ with st.sidebar:
         "Compare employment change across all scenarios",
         "Show USMCA long run impact on agriculture",
     ]:
-        if st.button(ex, use_container_width=True, key=f"ex_{ex[:20]}"):
+        if st.button(ex, width='stretch', key=f"ex_{ex[:20]}"):
             st.session_state["prefill"] = ex
 
     st.markdown("---")
-    if st.button("Clear conversation", use_container_width=True):
+    if st.button("Clear conversation", width='stretch'):
         st.session_state.messages = []
         st.session_state.figures = {}
         st.rerun()
@@ -618,7 +618,7 @@ with tab2:
             for fid in msg.get("figures",[]):
                 if fid in st.session_state.figures:
                     st.plotly_chart(st.session_state.figures[fid],
-                        use_container_width=True, key=f"h_{fid}_{i}")
+                        width='stretch', key=f"h_{fid}_{i}")
 
     prefill    = st.session_state.pop("prefill","")
     user_input = st.chat_input("Ask Claude about the GTAP labor data...")
@@ -640,7 +640,7 @@ with tab2:
                         st.markdown(resp_text)
                     fids = []
                     for fid, fig in figs:
-                        st.plotly_chart(fig, use_container_width=True, key=f"new_{fid}")
+                        st.plotly_chart(fig, width='stretch', key=f"new_{fid}")
                         st.session_state.figures[fid] = fig
                         fids.append(fid)
                     st.session_state.messages.append({
