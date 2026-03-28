@@ -138,7 +138,14 @@ def load_data(path):
     return _clean_df(pd.read_csv(path, dtype={"county_fips": str}))
 
 def _clean_df(df):
-    df["county_fips"] = df["county_fips"].astype(str).str.zfill(5)
+    if "county_fips" in df.columns:
+        df["county_fips"] = (df["county_fips"].fillna("")
+                             .astype(str).str.strip()
+                             .str.replace(".0", "", regex=False)
+                             .str.zfill(5))
+        df.loc[df["county_fips"] == "00000", "county_fips"] = ""
+    else:
+        df["county_fips"] = ""
     for col in ["workers_base", "workers_sim", "workers_change",
                 "pct_change", "lq", "effective_delta"]:
         if col in df.columns:
