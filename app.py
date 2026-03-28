@@ -99,6 +99,20 @@ def _prep(df):
         df["_msd"]=df["gtap_code"].map(lambda x: GTAP_TO_MODEL.get(str(x),("",str(x)))[1] if pd.notna(x) else "")
     return df
 
+@st.cache_data(show_spinner="Preparing dashboard data...")
+def preaggregate(df):
+    """Pre-aggregate to county x sector x skill x birthplace x scenario x year.
+    Reduces 3.7M rows to ~500K for fast dashboard rendering."""
+    bp = "birthplace" if "birthplace" in df.columns else "birthplace_label"
+    group_cols = ["scenario","year","gtap_code","gtap_sector","_msc","_msd",
+                  "skill_level", bp, "county_fips","county_name","state"]
+    group_cols = [c for c in group_cols if c in df.columns]
+    agg_cols = {c:"sum" for c in ["workers_base","workers_sim","workers_change","pct_change"]
+                if c in df.columns}
+    if not agg_cols:
+        return df
+    return df.groupby(group_cols, dropna=False).agg(agg_cols).reset_index()
+
 def has_sims(df): return "scenario" in df.columns and df["scenario"].nunique()>1
 def wcol(s): return "workers_base" if s=="baseline" else "workers_sim"
 def bpcol(df): return "birthplace" if "birthplace" in df.columns else "birthplace_label"
@@ -142,6 +156,7 @@ def run_agent(msg,df,key,ukey):
 
 def render_dashboard(df):
     import plotly.express as px
+    df = preaggregate(df)
     hs=has_sims(df); bp=bpcol(df); sk="skill_level"
     st.markdown("### Interactive Dashboard")
     st.caption("All charts update in real time.")
