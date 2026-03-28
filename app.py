@@ -322,9 +322,15 @@ def render_dashboard(df):
         sec_title = "Model Sectors" if use_agg else "GTAP Sectors"
         if is_chg:
             if sel_sec == "All sectors":
-                bd = (filt.groupby([sc_col, sd_col])["workers_change"]
+                _filt_agg = filt[filt[sc_col].notna() & (filt[sc_col] != "")]
+                if len(_filt_agg) == 0:
+                    _filt_agg = filt
+                    _gc, _gd = "gtap_code", "gtap_sector"
+                else:
+                    _gc, _gd = sc_col, sd_col
+                bd = (_filt_agg.groupby([_gc, _gd])["workers_change"]
                       .sum().reset_index().sort_values("workers_change").head(15))
-                bd["label"] = bd[sc_col] + " — " + bd[sd_col].str[:20]
+                bd["label"] = bd[_gc].astype(str) + " — " + bd[_gd].astype(str).str[:20]
                 fig_bar = px.bar(bd, x="workers_change", y="label", orientation="h",
                     title=f"Top 15 {sec_title} by Change", color="workers_change",
                     color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
@@ -340,9 +346,16 @@ def render_dashboard(df):
             if wc not in filt.columns:
                 fig_bar = px.bar(title="No data")
             elif sel_sec == "All sectors":
-                bd = (filt.groupby([sc_col, sd_col])[wc]
+                _filt_agg = filt[filt[sc_col].notna() & (filt[sc_col] != "")]
+                if len(_filt_agg) == 0:
+                    # fallback: try gtap_code grouping
+                    _filt_agg = filt
+                    _gc, _gd = "gtap_code", "gtap_sector"
+                else:
+                    _gc, _gd = sc_col, sd_col
+                bd = (_filt_agg.groupby([_gc, _gd])[wc]
                       .sum().reset_index().sort_values(wc, ascending=False).head(15))
-                bd["label"] = bd[sc_col] + " — " + bd[sd_col].str[:20]
+                bd["label"] = bd[_gc].astype(str) + " — " + bd[_gd].astype(str).str[:20]
                 fig_bar = px.bar(bd, x=wc, y="label", orientation="h",
                     title=f"Top 15 {sec_title} — {sel_year}", color=wc,
                     color_continuous_scale="Blues", labels={wc:"Workers","label":""})
