@@ -7,8 +7,6 @@ Each function is called when Claude decides to use a tool.
 import pandas as pd
 import numpy as np
 import json
-import plotly.express as px
-import plotly.graph_objects as go
 import requests
 import warnings
 warnings.filterwarnings("ignore")
@@ -231,6 +229,7 @@ def query_dataset(df, filters=None, group_by=None,
 
 def create_map(df, filters=None, title="Workers by County",
                color_scale="Blues"):
+    import plotly.express as px
     try:
         data = df.copy()
         if filters:
@@ -285,6 +284,7 @@ def create_map(df, filters=None, title="Workers by County",
 
 def create_chart(df, chart_type, filters=None, x="gtap_code",
                  color=None, title="Chart"):
+    import plotly.express as px
     try:
         data = df.copy()
         if filters:

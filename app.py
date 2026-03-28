@@ -7,7 +7,6 @@ import os
 import json
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import anthropic
 from tools import TOOL_DEFINITIONS, execute_tool
 
@@ -208,6 +207,7 @@ trd=Trade, hht=Health, edu=Education, obs=Business services."""
 
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
 def render_dashboard(df):
+    import plotly.express as px
     st.markdown("### Interactive Dashboard")
     st.caption("All charts update in real time when you change filters.")
 
