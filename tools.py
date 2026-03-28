@@ -1,7 +1,9 @@
 """
 tools.py
 Data tools available to the Claude agent.
-Each function is called when Claude decides to use a tool.
+Column names match gtap_dashboard.parquet:
+  scenario, year, gtap_code, gtap_sector, skill_level, birthplace,
+  county_fips, county_name, state, workers_base, workers_sim, workers_change
 """
 
 import pandas as pd
@@ -11,51 +13,64 @@ import requests
 import warnings
 warnings.filterwarnings("ignore")
 
-# ── TOOL DEFINITIONS FOR CLAUDE API ──────────────────────────────────────────
+def _wcol(df, scenario=None):
+    if scenario and scenario != "baseline" and "workers_change" in df.columns:
+        return "workers_change"
+    if "workers_base" in df.columns:
+        return "workers_base"
+    if "workers_sim" in df.columns:
+        return "workers_sim"
+    for c in df.columns:
+        if "worker" in c.lower():
+            return c
+    return df.columns[-1]
+
+def _bpcol(df):
+    return "birthplace" if "birthplace" in df.columns else "birthplace_label"
+
+def _apply_filters(data, filters):
+    if not filters:
+        return data
+    for col, val in filters.items():
+        if col not in data.columns:
+            continue
+        if isinstance(val, list):
+            data = data[data[col].isin(val)]
+        else:
+            data = data[data[col] == val]
+    return data
 
 TOOL_DEFINITIONS = [
     {
         "name": "query_dataset",
         "description": (
-            "Query the GTAP labor dataset. Use this tool to answer questions "
-            "about worker counts, sectors, regions, skill levels, birthplace, "
-            "years, or counties. Returns aggregated data as a table. "
-            "Available columns: gtap_code, gtap_sector, skill_level, "
-            "birthplace_label, state, county_fips, county_name, year, "
-            "n_in_sample, estimated_workers."
+            "Query the GTAP labor dataset. Use to answer questions about "
+            "worker counts, employment changes, sectors, states, or counties. "
+            "Columns: scenario, year, gtap_code, gtap_sector, skill_level, birthplace, "
+            "state, county_fips, county_name, workers_base (baseline employment), "
+            "workers_sim (simulated employment), workers_change (change vs baseline). "
+            "Scenarios: baseline, JPM_sim03, JPM_sim03b, JPM_sim03c, USMCA_SR, USMCA_LR. "
+            "For simulation questions filter by scenario and use workers_change."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "filters": {
                     "type": "object",
-                    "description": (
-                        "Optional filters as key-value pairs. Keys must be "
-                        "valid column names. Example: "
-                        "{\"gtap_code\": \"v_f\", \"year\": 2022}"
-                    )
+                    "description": "Filters as key-value pairs. Example: {\"scenario\": \"JPM_sim03\"}"
                 },
                 "group_by": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": (
-                        "Columns to group by for aggregation. "
-                        "Example: [\"gtap_code\", \"year\"]"
-                    )
+                    "description": "Columns to group by. Example: [\"state\", \"gtap_code\"]"
                 },
                 "metric": {
                     "type": "string",
-                    "enum": ["estimated_workers", "n_in_sample"],
-                    "description": "Metric to aggregate. Default: estimated_workers"
+                    "enum": ["workers_base", "workers_sim", "workers_change"],
+                    "description": "Metric to aggregate. Use workers_change for simulations."
                 },
-                "top_n": {
-                    "type": "integer",
-                    "description": "Return only top N rows by metric value. Optional."
-                },
-                "sort_desc": {
-                    "type": "boolean",
-                    "description": "Sort descending by metric. Default: true"
-                }
+                "top_n": {"type": "integer", "description": "Return top N rows."},
+                "sort_desc": {"type": "boolean", "description": "Sort descending. Default: true"}
             },
             "required": []
         }
@@ -63,29 +78,26 @@ TOOL_DEFINITIONS = [
     {
         "name": "create_map",
         "description": (
-            "Create a choropleth map of the United States showing estimated "
-            "workers by county. Returns a Plotly figure. Use when the user "
-            "asks for a map, geographic visualization, or county-level view."
+            "Create a choropleth map showing workers or employment change by county. "
+            "Use RdYlGn scale for workers_change, Blues for workers_base."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "filters": {
                     "type": "object",
-                    "description": (
-                        "Filters to apply before mapping. "
-                        "Example: {\"gtap_code\": \"v_f\", \"year\": 2022, "
-                        "\"birthplace_label\": \"Foreign born\"}"
-                    )
+                    "description": "Filters before mapping. Example: {\"scenario\": \"JPM_sim03\"}"
                 },
-                "title": {
+                "metric": {
                     "type": "string",
-                    "description": "Map title. Be descriptive."
+                    "enum": ["workers_base", "workers_sim", "workers_change"],
+                    "description": "Column to map. Auto-detected if not specified."
                 },
+                "title": {"type": "string", "description": "Map title."},
                 "color_scale": {
                     "type": "string",
-                    "enum": ["Blues", "Reds", "Greens", "YlOrRd", "Viridis", "Plasma"],
-                    "description": "Color scale for the choropleth. Default: Blues"
+                    "enum": ["Blues", "Reds", "Greens", "RdYlGn", "YlOrRd", "Viridis"],
+                    "description": "Color scale."
                 }
             },
             "required": ["title"]
@@ -93,34 +105,23 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "create_chart",
-        "description": (
-            "Create a bar chart, line chart, or pie chart from the dataset. "
-            "Use for trends over time, sector comparisons, or distributions."
-        ),
+        "description": "Create a bar, line, or pie chart from the dataset.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "chart_type": {
                     "type": "string",
-                    "enum": ["bar", "line", "pie", "treemap"],
-                    "description": "Type of chart to create"
+                    "enum": ["bar", "line", "pie", "treemap"]
                 },
-                "filters": {
-                    "type": "object",
-                    "description": "Filters to apply before charting"
-                },
-                "x": {
+                "filters": {"type": "object"},
+                "x": {"type": "string", "description": "Column for x-axis."},
+                "metric": {
                     "type": "string",
-                    "description": "Column for x-axis or categories"
+                    "enum": ["workers_base", "workers_sim", "workers_change"],
+                    "description": "Metric to plot. Auto-detected if not specified."
                 },
-                "color": {
-                    "type": "string",
-                    "description": "Column to use for color grouping. Optional."
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Chart title"
-                }
+                "color": {"type": "string", "description": "Column for color grouping."},
+                "title": {"type": "string"}
             },
             "required": ["chart_type", "x", "title"]
         }
@@ -128,43 +129,24 @@ TOOL_DEFINITIONS = [
     {
         "name": "get_dataset_info",
         "description": (
-            "Get metadata about the dataset: available sectors, years, states, "
-            "skill levels, birthplace categories, total worker counts, and "
-            "column descriptions. Use this first when the user asks a general "
-            "question about what data is available."
+            "Get dataset metadata: scenarios, sectors, states, skill levels, "
+            "birthplace categories, total workers, and column names. "
+            "Always call this first when the user asks what data is available."
         ),
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "input_schema": {"type": "object", "properties": {}, "required": []}
     },
     {
         "name": "download_usda_data",
-        "description": (
-            "Download fresh data from the USDA NASS Quick Stats API. Use when "
-            "the user asks to update USDA data, check for new Census of "
-            "Agriculture releases, or download specific commodity data."
-        ),
+        "description": "Download data from the USDA NASS Quick Stats API.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "commodity_desc": {
-                    "type": "string",
-                    "description": "Commodity to query. Example: LABOR, CORN, MILK"
-                },
-                "statisticcat_desc": {
-                    "type": "string",
-                    "description": "Statistic category. Example: WORKERS, SALES, AREA HARVESTED"
-                },
-                "year": {
-                    "type": "integer",
-                    "description": "Year to query. Leave empty for latest available."
-                },
+                "commodity_desc": {"type": "string"},
+                "statisticcat_desc": {"type": "string"},
+                "year": {"type": "integer"},
                 "agg_level": {
                     "type": "string",
-                    "enum": ["NATIONAL", "STATE", "COUNTY"],
-                    "description": "Geographic aggregation level"
+                    "enum": ["NATIONAL", "STATE", "COUNTY"]
                 }
             },
             "required": ["commodity_desc", "statisticcat_desc"]
@@ -173,108 +155,95 @@ TOOL_DEFINITIONS = [
 ]
 
 
-# ── TOOL EXECUTION FUNCTIONS ──────────────────────────────────────────────────
-
 def query_dataset(df, filters=None, group_by=None,
-                  metric="estimated_workers", top_n=None,
-                  sort_desc=True):
+                  metric=None, top_n=None, sort_desc=True):
     try:
         data = df.copy()
-        if filters:
-            for col, val in filters.items():
-                if col in data.columns:
-                    if isinstance(val, list):
-                        data = data[data[col].isin(val)]
-                    else:
-                        data = data[data[col] == val]
+        data = _apply_filters(data, filters)
+        scenario = (filters or {}).get("scenario", "baseline")
+        if metric is None or metric not in data.columns:
+            metric = _wcol(data, scenario)
 
         if group_by:
             valid_cols = [c for c in group_by if c in data.columns]
-            if valid_cols:
-                agg_col = metric if metric in data.columns else "estimated_workers"
-                result = data.groupby(valid_cols)[agg_col].sum().reset_index()
-                result.columns = list(valid_cols) + [agg_col]
+            if valid_cols and metric in data.columns:
+                result = data.groupby(valid_cols)[metric].sum().reset_index()
             else:
-                result = data
+                result = data.head(20)
         else:
             if metric in data.columns:
                 result = pd.DataFrame({
-                    "total": [data[metric].sum()],
+                    "total_" + metric: [data[metric].sum()],
                     "count_rows": [len(data)]
                 })
             else:
-                result = data
+                result = data.head(20)
 
-        sort_col = metric if metric in result.columns else result.columns[-1]
-        if sort_col in result.columns:
-            result = result.sort_values(sort_col, ascending=not sort_desc)
-
+        if metric in result.columns:
+            result = result.sort_values(metric, ascending=not sort_desc)
         if top_n and top_n > 0:
             result = result.head(top_n)
 
-        for col in result.select_dtypes(include=[np.number]).columns:
-            if result[col].max() > 1000:
-                result[col] = result[col].apply(
+        result_fmt = result.copy()
+        for col in result_fmt.select_dtypes(include=[np.number]).columns:
+            if result_fmt[col].abs().max() > 1000:
+                result_fmt[col] = result_fmt[col].apply(
                     lambda x: f"{int(x):,}" if pd.notna(x) else "")
 
         return {
             "success": True,
-            "rows": len(result),
-            "data": result.to_dict(orient="records"),
-            "columns": list(result.columns)
+            "rows": len(result_fmt),
+            "metric_used": metric,
+            "data": result_fmt.to_dict(orient="records"),
+            "columns": list(result_fmt.columns)
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-def create_map(df, filters=None, title="Workers by County",
-               color_scale="Blues"):
+def create_map(df, filters=None, metric=None,
+               title="Workers by County", color_scale=None):
     import plotly.express as px
     try:
         data = df.copy()
-        if filters:
-            for col, val in filters.items():
-                if col in data.columns:
-                    if isinstance(val, list):
-                        data = data[data[col].isin(val)]
-                    else:
-                        data = data[data[col] == val]
-
+        data = _apply_filters(data, filters)
+        scenario = (filters or {}).get("scenario", "baseline")
+        if metric is None or metric not in data.columns:
+            metric = _wcol(data, scenario)
+        if color_scale is None:
+            color_scale = "RdYlGn" if metric == "workers_change" else "Blues"
         if "county_fips" not in data.columns:
             return None
 
         county_data = (
-            data.groupby(["county_fips", "county_name", "state"])["estimated_workers"]
+            data.groupby(["county_fips", "county_name", "state"])[metric]
             .sum().reset_index()
         )
         county_data = county_data[
             county_data["county_fips"].notna() &
             (county_data["county_fips"].str.len() == 5)
         ]
-        county_data["hover_text"] = (
-            county_data["county_name"] + ", " + county_data["state"] +
-            "<br>Workers: " +
-            county_data["estimated_workers"].apply(lambda x: f"{int(x):,}")
-        )
 
+        kw = {"color_continuous_midpoint": 0} if metric == "workers_change" else {}
         fig = px.choropleth(
             county_data,
             geojson="https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json",
             locations="county_fips",
-            color="estimated_workers",
+            color=metric,
             color_continuous_scale=color_scale,
             scope="usa",
-            hover_name="hover_text",
-            hover_data={"county_fips": False, "estimated_workers": False,
-                        "county_name": False, "state": False},
+            hover_data={"county_fips": False, "county_name": True,
+                        "state": True, metric: ":,"},
             title=title,
-            labels={"estimated_workers": "Estimated Workers"}
+            labels={metric: metric.replace("_", " ").title(),
+                    "county_name": "County", "state": "State"},
+            **kw
         )
         fig.update_layout(
             margin={"r": 0, "t": 40, "l": 0, "b": 0},
-            coloraxis_colorbar=dict(title="Workers", tickformat=",d"),
-            title_font_size=16,
-            height=550
+            coloraxis_colorbar=dict(
+                title=metric.replace("_", " ").title(), tickformat=",d"),
+            title_font_size=16, height=550
         )
         return fig
     except Exception as e:
@@ -283,55 +252,46 @@ def create_map(df, filters=None, title="Workers by County",
 
 
 def create_chart(df, chart_type, filters=None, x="gtap_code",
-                 color=None, title="Chart"):
+                 metric=None, color=None, title="Chart"):
     import plotly.express as px
     try:
         data = df.copy()
-        if filters:
-            for col, val in filters.items():
-                if col in data.columns:
-                    if isinstance(val, list):
-                        data = data[data[col].isin(val)]
-                    else:
-                        data = data[data[col] == val]
+        data = _apply_filters(data, filters)
+        scenario = (filters or {}).get("scenario", "baseline")
+        if metric is None or metric not in data.columns:
+            metric = _wcol(data, scenario)
 
         group_cols = [c for c in ([x, color] if color and color != x else [x])
                       if c in data.columns]
-        agg_data = data.groupby(group_cols)["estimated_workers"].sum().reset_index()
-        agg_data = agg_data.sort_values("estimated_workers", ascending=False)
+        if not group_cols or metric not in data.columns:
+            return None
+
+        agg_data = data.groupby(group_cols)[metric].sum().reset_index()
+        agg_data = agg_data.sort_values(metric, ascending=False)
         colors = px.colors.qualitative.Set2
+        lbl = {metric: metric.replace("_", " ").title(),
+               x: x.replace("_", " ").title()}
 
         if chart_type == "bar":
-            fig = px.bar(
-                agg_data, x=x, y="estimated_workers",
+            fig = px.bar(agg_data, x=x, y=metric,
                 color=color if color and color in agg_data.columns else None,
-                title=title, color_discrete_sequence=colors,
-                labels={"estimated_workers": "Estimated Workers",
-                        x: x.replace("_", " ").title()}
-            )
+                title=title, color_discrete_sequence=colors, labels=lbl)
             fig.update_layout(xaxis_tickangle=-45)
         elif chart_type == "line":
-            fig = px.line(
-                agg_data, x=x, y="estimated_workers",
+            fig = px.line(agg_data, x=x, y=metric,
                 color=color if color and color in agg_data.columns else None,
-                title=title, color_discrete_sequence=colors, markers=True,
-                labels={"estimated_workers": "Estimated Workers",
-                        x: x.replace("_", " ").title()}
-            )
+                title=title, color_discrete_sequence=colors,
+                markers=True, labels=lbl)
         elif chart_type == "pie":
-            fig = px.pie(
-                agg_data.head(12), values="estimated_workers", names=x,
-                title=title, color_discrete_sequence=colors
-            )
+            fig = px.pie(agg_data.head(12), values=metric, names=x,
+                title=title, color_discrete_sequence=colors)
         elif chart_type == "treemap":
             path_cols = ([color, x] if color and color in agg_data.columns
                          and color != x else [x])
-            fig = px.treemap(
-                agg_data, path=path_cols, values="estimated_workers",
-                title=title, color_discrete_sequence=colors
-            )
+            fig = px.treemap(agg_data, path=path_cols, values=metric,
+                title=title, color_discrete_sequence=colors)
         else:
-            fig = px.bar(agg_data, x=x, y="estimated_workers", title=title)
+            fig = px.bar(agg_data, x=x, y=metric, title=title)
 
         fig.update_layout(
             height=480, title_font_size=16,
@@ -347,34 +307,47 @@ def create_chart(df, chart_type, filters=None, x="gtap_code",
 
 def get_dataset_info(df):
     try:
-        return {
+        bp = _bpcol(df)
+        has_sims = "scenario" in df.columns and df["scenario"].nunique() > 1
+        scenarios = sorted(df["scenario"].unique().tolist()) if "scenario" in df.columns else ["baseline"]
+
+        info = {
             "success": True,
             "info": {
                 "total_rows": len(df),
-                "total_workers_all_years": int(df["estimated_workers"].sum()),
-                "years_available": sorted(df["year"].unique().tolist()),
-                "gtap_sectors": sorted(df["gtap_code"].unique().tolist()),
-                "n_gtap_sectors": df["gtap_code"].nunique(),
-                "n_states": df["state"].nunique(),
-                "n_counties": df["county_fips"].nunique(),
-                "skill_levels": df["skill_level"].unique().tolist(),
-                "birthplace_categories": df["birthplace_label"].unique().tolist(),
                 "columns": list(df.columns),
-                "workers_by_year": (
-                    df.groupby("year")["estimated_workers"].sum()
-                    .apply(lambda x: f"{int(x):,}").to_dict()
-                ),
-                "top_10_sectors": (
-                    df.groupby(["gtap_code", "gtap_sector"])["estimated_workers"]
-                    .sum().reset_index()
-                    .sort_values("estimated_workers", ascending=False)
-                    .head(10)
-                    .apply(lambda r: f"{r['gtap_code']} - {r['gtap_sector']}: "
-                           f"{int(r['estimated_workers']):,}", axis=1)
-                    .tolist()
-                )
+                "scenarios": scenarios,
+                "has_simulations": has_sims,
+                "year_available": 2024,
+                "n_gtap_sectors": df["gtap_code"].nunique() if "gtap_code" in df.columns else 0,
+                "gtap_sectors": sorted(df["gtap_code"].unique().tolist()) if "gtap_code" in df.columns else [],
+                "n_states": df["state"].nunique() if "state" in df.columns else 0,
+                "n_counties": df["county_fips"].nunique() if "county_fips" in df.columns else 0,
+                "skill_levels": df["skill_level"].unique().tolist() if "skill_level" in df.columns else [],
+                "birthplace_categories": df[bp].unique().tolist() if bp in df.columns else [],
             }
         }
+
+        if "workers_base" in df.columns:
+            base = df[df["scenario"] == "baseline"] if "scenario" in df.columns else df
+            info["info"]["total_baseline_workers"] = f"{int(base['workers_base'].sum()):,}"
+            if "gtap_code" in df.columns and "gtap_sector" in df.columns:
+                top10 = (base.groupby(["gtap_code", "gtap_sector"])["workers_base"]
+                         .sum().reset_index()
+                         .sort_values("workers_base", ascending=False).head(10))
+                info["info"]["top_10_sectors"] = [
+                    f"{r['gtap_code']} - {r['gtap_sector']}: {int(r['workers_base']):,}"
+                    for _, r in top10.iterrows()
+                ]
+
+        if has_sims and "workers_change" in df.columns:
+            sim_summary = {}
+            for scen in [s for s in scenarios if s != "baseline"]:
+                sf = df[df["scenario"] == scen]
+                sim_summary[scen] = f"{int(sf['workers_change'].sum()):,}"
+            info["info"]["total_change_by_scenario"] = sim_summary
+
+        return info
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -382,13 +355,7 @@ def get_dataset_info(df):
 def download_usda_data(api_key, commodity_desc, statisticcat_desc,
                        year=None, agg_level="STATE"):
     if not api_key or api_key.strip() in ("", "YOUR_USDA_API_KEY"):
-        return {
-            "success": False,
-            "error": (
-                "USDA API key not configured. "
-                "Get a free key at: https://quickstats.nass.usda.gov/api"
-            )
-        }
+        return {"success": False, "error": "USDA API key not configured."}
     params = {
         "key": api_key,
         "commodity_desc": commodity_desc.upper(),
@@ -406,26 +373,19 @@ def download_usda_data(api_key, commodity_desc, statisticcat_desc,
         resp.raise_for_status()
         data = resp.json()
         if "data" not in data:
-            return {"success": False, "error": "No data returned", "raw": str(data)[:300]}
-        records = data["data"]
-        df_usda = pd.DataFrame(records)
+            return {"success": False, "error": "No data returned"}
+        df_usda = pd.DataFrame(data["data"])
         return {
             "success": True,
             "rows_downloaded": len(df_usda),
-            "years_available": (sorted(df_usda["year"].unique().tolist())
-                                if "year" in df_usda.columns else []),
-            "short_desc_available": (df_usda["short_desc"].unique().tolist()[:15]
-                                     if "short_desc" in df_usda.columns else []),
             "preview": df_usda.head(3).to_dict(orient="records")
         }
-    except requests.exceptions.ConnectionError:
-        return {"success": False, "error": "Cannot connect to USDA API."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 def execute_tool(tool_name, tool_input, df, usda_api_key=""):
-    """Dispatch a tool call from Claude. Returns (result, is_figure)."""
+    """Dispatch a tool call. Returns (result, is_figure)."""
     if tool_name == "query_dataset":
         return query_dataset(df, **tool_input), False
     elif tool_name == "create_map":
