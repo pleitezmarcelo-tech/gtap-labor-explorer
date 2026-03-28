@@ -175,6 +175,12 @@ def run_agent(user_message, df, api_key, usda_key):
 # ── DASHBOARD ─────────────────────────────────────────────────────────────────
 def render_dashboard(df):
     import plotly.express as px
+
+    # Derive model sector columns in-memory (works even if parquet lacks them)
+    df = df.copy()
+    df["_msc"] = df["gtap_code"].map(lambda x: GTAP_TO_MODEL.get(x,(x,""))[0])
+    df["_msd"] = df["gtap_code"].map(lambda x: GTAP_TO_MODEL.get(x,("",x))[1])
+
     _has_sims = has_sims(df)
     bpc = bpcol(df)
     sk_col = "skill_level"
@@ -186,9 +192,9 @@ def render_dashboard(df):
     agg_view = st.radio("Sector view",
         ["65 GTAP sectors", "27 Model sectors"],
         horizontal=True, key="d_agg")
-    use_agg = (agg_view == "27 Model sectors") and ("model_sector_code" in df.columns)
-    sc_col = "model_sector_code" if use_agg else "gtap_code"
-    sd_col = "model_sector_desc" if (use_agg and "model_sector_desc" in df.columns) else "gtap_sector"
+    use_agg = (agg_view == "27 Model sectors")
+    sc_col = "_msc" if use_agg else "gtap_code"
+    sd_col = "_msd" if use_agg else "gtap_sector"
 
     # Filters
     ncols = 5 if _has_sims else 4
