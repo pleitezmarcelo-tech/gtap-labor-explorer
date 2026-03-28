@@ -1,7 +1,6 @@
-streamlit==1.45.1
+streamlit
 anthropic>=0.25.0
-pandas==2.2.3
-plotly==5.24.1
-requests==2.32.3
-numpy==1.26.4
-pyarrow==17.0.0
+pandas
+plotly
+requests
+numpy
