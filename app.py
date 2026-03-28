@@ -769,21 +769,39 @@ with st.sidebar:
         st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.markdown("**Dataset Summary**")
         try:
-            if "scenario" in df_s.columns and "workers_base" in df_s.columns:
-                val = int(df_s[(df_s["scenario"]=="baseline") &
-                               (df_s["year"]==2024)]["workers_base"].sum())
-            elif "workers_base" in df_s.columns:
-                val = int(df_s[df_s["year"]==2024]["workers_base"].sum())
-            else:
-                val = 0
-            st.metric("Baseline Workers (2024)", f"{val:,}")
-        except Exception:
-            st.metric("Baseline Workers (2024)", "—")
-        st.metric("GTAP Sectors", df_s["gtap_code"].nunique())
-        st.metric("Counties",     df_s["county_fips"].nunique())
-        if has_simulations(df_s):
-            n_scen = df_s["scenario"].nunique() - 1
-            st.metric("Simulation Scenarios", n_scen)
+            # Workers
+            wcol = "workers_base" if "workers_base" in df_s.columns else "estimated_workers"
+            if wcol in df_s.columns:
+                if "scenario" in df_s.columns and "year" in df_s.columns:
+                    val = int(df_s[(df_s["scenario"]=="baseline") &
+                                   (df_s["year"]==2024)][wcol].sum())
+                elif "year" in df_s.columns:
+                    val = int(df_s[df_s["year"]==2024][wcol].sum())
+                else:
+                    val = int(df_s[wcol].sum())
+                st.metric("Baseline Workers (2024)", f"{val:,}")
+
+            # Sectors
+            scol = "gtap_code" if "gtap_code" in df_s.columns else "gtap"
+            if scol in df_s.columns:
+                st.metric("GTAP Sectors", df_s[scol].nunique())
+
+            # Counties
+            if "county_fips" in df_s.columns:
+                st.metric("Counties", df_s["county_fips"].nunique())
+
+            # Years
+            if "year" in df_s.columns:
+                st.metric("Years",
+                          f"{int(df_s['year'].min())}–{int(df_s['year'].max())}")
+
+            # Scenarios
+            if has_simulations(df_s):
+                n_scen = df_s["scenario"].nunique() - 1
+                st.metric("Simulation Scenarios", n_scen)
+
+        except Exception as e:
+            st.warning(f"Summary unavailable: {e}")
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("---")
