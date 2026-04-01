@@ -3,6 +3,7 @@ GTAP Labor Data Explorer
 Python 3.14 + Streamlit 1.55 compatible
 """
 import os, json
+import math
 import streamlit as st
 import pandas as pd
 import anthropic
@@ -208,6 +209,12 @@ def bpcol(df):    return "birthplace" if "birthplace" in df.columns else "birthp
 def mc(val,lbl,cls=""):
     return (f'<div class="mc {cls}"><div class="mv {cls}">{val}</div>'
             f'<div class="ml">{lbl}</div></div>')
+
+def fmt_up_1(val, suffix=""):
+    if val is None or pd.isna(val):
+        return "N/A"
+    rounded = math.ceil(float(val) * 10 - 1e-9) / 10
+    return f"{rounded:.1f}{suffix}"
 
 def osecs(df):
     av = set(df["gtap_code"].dropna().unique())
@@ -535,17 +542,31 @@ def render_diaspora_dashboard():
 
     c1, c2, c3 = st.columns(3)
     with c1:
+        group_options = ["Latino", "Mexican-Origin", "All Foreign-Born"]
         group = st.selectbox(
             "Population group",
-            sorted(state_df["population_group"].dropna().unique().tolist()),
+            group_options,
             key="diaspora_group",
         )
     with c2:
+        if group == "Latino":
+            nat_base = national_df[
+                national_df["demographic_subgroup_label"].isin(
+                    ["Latino Native-Born", "Latino Foreign-Born", "Latino Total"]
+                )
+            ].copy()
+            state_base = state_df[state_df["population_group"] == "Latino"].copy()
+        elif group == "Mexican-Origin":
+            nat_base = national_df[national_df["population_group"] == "Mexican-Origin"].copy()
+            state_base = state_df[state_df["population_group"] == "Mexican-Origin"].copy()
+        else:
+            nat_base = national_df[
+                national_df["demographic_subgroup_label"] == "All Foreign-Born"
+            ].copy()
+            state_base = state_df.iloc[0:0].copy()
+
         subgroup_opts = sorted(
-            state_df[state_df["population_group"] == group]["demographic_subgroup_label"]
-            .dropna()
-            .unique()
-            .tolist()
+            nat_base["demographic_subgroup_label"].dropna().unique().tolist()
         )
         subgroup = st.selectbox(
             "Demographic subgroup",
@@ -561,25 +582,39 @@ def render_diaspora_dashboard():
         metric_label = st.selectbox("Metric", list(metric_map.keys()), key="diaspora_metric")
         metric_col = metric_map[metric_label]
 
-    filt = state_df[state_df["population_group"] == group].copy()
+    filt = state_base.copy()
     if subgroup != "All subgroups":
         filt = filt[filt["demographic_subgroup_label"] == subgroup]
 
-    nat = national_df[national_df["population_group"] == group].copy()
-    nat_total = nat[nat["nativity_type"] == "Total"]
-    nat_nb = nat[nat["nativity_type"] == "Native-Born"]
-    nat_fb = nat[nat["nativity_type"].str.contains("Foreign", na=False)]
+    nat = nat_base.copy()
+    if subgroup != "All subgroups":
+        nat = nat[nat["demographic_subgroup_label"] == subgroup]
+        selected_total = nat["gdp_trillion_2023"].sum() if len(nat) else None
+        nativity_values = nat["nativity_type"].dropna().tolist() if "nativity_type" in nat.columns else []
+        native_total = selected_total if any(x == "Native-Born" for x in nativity_values) else None
+        foreign_total = selected_total if any(("Foreign" in x) or ("FB" in x) for x in nativity_values) else None
+        share_total = nat["share_of_us_gdp_pct"].sum() if len(nat) else None
+    else:
+        total_rows = nat_base[nat_base["nativity_type"] == "Total"]
+        selected_total = total_rows["gdp_trillion_2023"].sum() if len(total_rows) else (
+            nat_base["gdp_trillion_2023"].sum() if len(nat_base) == 1 else None
+        )
+        share_total = total_rows["share_of_us_gdp_pct"].sum() if len(total_rows) else (
+            nat_base["share_of_us_gdp_pct"].sum() if len(nat_base) == 1 else None
+        )
+        native_rows = nat_base[nat_base["nativity_type"] == "Native-Born"]
+        fb_rows = nat_base[
+            nat_base["nativity_type"].str.contains("Foreign|FB", na=False)
+        ]
+        native_total = native_rows["gdp_trillion_2023"].sum() if len(native_rows) else None
+        foreign_total = fb_rows["gdp_trillion_2023"].sum() if len(fb_rows) else None
 
     k1, k2, k3, k4 = st.columns(4)
-    total_trillions = nat_total["gdp_trillion_2023"].sum()
-    native_trillions = nat_nb["gdp_trillion_2023"].sum()
-    foreign_trillions = nat_fb["gdp_trillion_2023"].sum()
-    total_share = nat_total["share_of_us_gdp_pct"].sum()
     for c, v, l in [
-        (k1, f"{total_trillions:.2f}", "Total GDP (trillions USD)"),
-        (k2, f"{native_trillions:.2f}", "Native-Born GDP (trillions)"),
-        (k3, f"{foreign_trillions:.2f}", "Foreign-Born GDP (trillions)"),
-        (k4, f"{total_share:.2f}%", "Share of U.S. GDP"),
+        (k1, fmt_up_1(selected_total), "Selected GDP (trillions USD)"),
+        (k2, fmt_up_1(native_total), "Native-Born GDP (trillions)"),
+        (k3, fmt_up_1(foreign_total), "Foreign-Born GDP (trillions)"),
+        (k4, fmt_up_1(share_total, "%"), "Share of U.S. GDP"),
     ]:
         with c:
             st.markdown(mc(v, l), unsafe_allow_html=True)
@@ -588,53 +623,59 @@ def render_diaspora_dashboard():
 
     left, right = st.columns([3, 2])
     with left:
-        map_df = filt[["state_abbrev", "state_name", metric_col]].dropna().copy()
-        fig = px.choropleth(
-            map_df,
-            locations="state_abbrev",
-            locationmode="USA-states",
-            color=metric_col,
-            scope="usa",
-            color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
-            hover_data={"state_abbrev": False, "state_name": True, metric_col: ":.2f"},
-            title=f"{metric_label} by State",
-            labels={metric_col: metric_label, "state_name": "State"},
-        )
-        fig.update_layout(
-            margin={"r": 0, "t": 40, "l": 0, "b": 0},
-            height=430,
-            title_font_size=14,
-            coloraxis_colorbar=dict(title=metric_label),
-        )
-        st.plotly_chart(fig, key=f"diaspora_map_{group}_{subgroup}_{metric_col}")
+        if len(filt) == 0:
+            st.info("State-level estimates are not available for this selection.")
+        else:
+            map_df = filt[["state_abbrev", "state_name", metric_col]].dropna().copy()
+            fig = px.choropleth(
+                map_df,
+                locations="state_abbrev",
+                locationmode="USA-states",
+                color=metric_col,
+                scope="usa",
+                color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
+                hover_data={"state_abbrev": False, "state_name": True, metric_col: ":.2f"},
+                title=f"{metric_label} by State",
+                labels={metric_col: metric_label, "state_name": "State"},
+            )
+            fig.update_layout(
+                margin={"r": 0, "t": 40, "l": 0, "b": 0},
+                height=430,
+                title_font_size=14,
+                coloraxis_colorbar=dict(title=metric_label),
+            )
+            st.plotly_chart(fig, key=f"diaspora_map_{group}_{subgroup}_{metric_col}")
 
     with right:
-        top_states = filt[["state_name", metric_col]].sort_values(metric_col, ascending=False).head(15)
-        fig = px.bar(
-            top_states.sort_values(metric_col),
-            x=metric_col,
-            y="state_name",
-            orientation="h",
-            title=f"Top 15 States - {metric_label}",
-            color=metric_col,
-            color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
-            labels={metric_col: metric_label, "state_name": "State"},
-        )
-        fig.update_layout(
-            height=430,
-            showlegend=False,
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            coloraxis_showscale=False,
-            yaxis=dict(autorange="reversed"),
-            margin=dict(l=10, r=10, t=40, b=10),
-            title_font_size=14,
-        )
-        st.plotly_chart(fig, key=f"diaspora_bar_{group}_{subgroup}_{metric_col}")
+        if len(filt) == 0:
+            st.info("No state ranking is available for this selection.")
+        else:
+            top_states = filt[["state_name", metric_col]].sort_values(metric_col, ascending=False).head(15)
+            fig = px.bar(
+                top_states.sort_values(metric_col),
+                x=metric_col,
+                y="state_name",
+                orientation="h",
+                title=f"Top 15 States - {metric_label}",
+                color=metric_col,
+                color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
+                labels={metric_col: metric_label, "state_name": "State"},
+            )
+            fig.update_layout(
+                height=430,
+                showlegend=False,
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                coloraxis_showscale=False,
+                yaxis=dict(autorange="reversed"),
+                margin=dict(l=10, r=10, t=40, b=10),
+                title_font_size=14,
+            )
+            st.plotly_chart(fig, key=f"diaspora_bar_{group}_{subgroup}_{metric_col}")
 
     low1, low2 = st.columns(2)
     with low1:
-        nat_bar = nat[["demographic_subgroup_label", "gdp_trillion_2023"]].copy()
+        nat_bar = nat_base[["demographic_subgroup_label", "gdp_trillion_2023"]].copy()
         fig = px.bar(
             nat_bar.sort_values("gdp_trillion_2023"),
             x="gdp_trillion_2023",
@@ -656,17 +697,20 @@ def render_diaspora_dashboard():
         st.plotly_chart(fig, key=f"diaspora_natbar_{group}")
 
     with low2:
-        preview = filt.sort_values(metric_col, ascending=False)[
-            [
-                "state_name",
-                "demographic_subgroup_label",
-                "nativity_type",
-                "gdp_billion_2023",
-                "share_of_state_gdp_pct",
-            ]
-        ].head(15)
         st.markdown("#### Top state rows")
-        st.dataframe(preview, use_container_width=True, hide_index=True)
+        if len(filt) == 0:
+            st.write("N/A")
+        else:
+            preview = filt.sort_values(metric_col, ascending=False)[
+                [
+                    "state_name",
+                    "demographic_subgroup_label",
+                    "nativity_type",
+                    "gdp_billion_2023",
+                    "share_of_state_gdp_pct",
+                ]
+            ].head(15)
+            st.dataframe(preview, use_container_width=True, hide_index=True)
 
 #  Sidebar 
 with st.sidebar:
