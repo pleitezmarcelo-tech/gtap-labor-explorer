@@ -15,6 +15,12 @@ DASH_REPO     = "/mount/src/gtap-labor-explorer/gtap_dashboard.parquet"
 DASH_LOCAL    = "gtap_dashboard.parquet"
 SKILL_REPO    = "/mount/src/gtap-labor-explorer/gtap_skill.parquet"
 SKILL_LOCAL   = "gtap_skill.parquet"
+DIASPORA_STATE_REPO = "/mount/src/gtap-labor-explorer/diaspora_state.parquet"
+DIASPORA_STATE_LOCAL = "diaspora_state.parquet"
+DIASPORA_NAT_REPO = "/mount/src/gtap-labor-explorer/diaspora_national.parquet"
+DIASPORA_NAT_LOCAL = "diaspora_national.parquet"
+DIASPORA_LONG_REPO = "/mount/src/gtap-labor-explorer/diaspora_gdp_long.parquet"
+DIASPORA_LONG_LOCAL = "diaspora_gdp_long.parquet"
 
 GTAP_ORDER = [
     "pdr","wht","gro","v_f","osd","c_b","pfb","ocr",
@@ -103,7 +109,13 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 #  Session state 
-for k, v in [("messages",[]), ("df",None), ("figures",{})]:
+for k, v in [
+    ("df",None),
+    ("messages_gtap",[]),
+    ("messages_diaspora",[]),
+    ("figures_gtap",{}),
+    ("figures_diaspora",{}),
+]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -144,6 +156,37 @@ def load_skill():
     for c in ["workers_base","workers_sim","workers_change"]:
         if c in df.columns: df[c] = pd.to_numeric(df[c], errors="coerce")
     if "scenario" not in df.columns: df["scenario"] = "baseline"
+    return df
+
+@st.cache_data(show_spinner="Loading Diaspora GDP data...")
+def load_diaspora_state():
+    path = DIASPORA_STATE_REPO if os.path.exists(DIASPORA_STATE_REPO) else DIASPORA_STATE_LOCAL
+    df = pd.read_parquet(path)
+    for c in [
+        "year", "share_of_state_gdp_pct", "total_state_gdp_billion_2023",
+        "gdp_billion_2023", "gdp_trillion_2023"
+    ]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+@st.cache_data(show_spinner="Loading Diaspora GDP national summary...")
+def load_diaspora_national():
+    path = DIASPORA_NAT_REPO if os.path.exists(DIASPORA_NAT_REPO) else DIASPORA_NAT_LOCAL
+    df = pd.read_parquet(path)
+    for c in ["year", "gdp_billion_2023", "gdp_trillion_2023", "share_of_us_gdp_pct"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+@st.cache_data(show_spinner="Loading Diaspora GDP query data...")
+def load_diaspora_long():
+    path = DIASPORA_LONG_REPO if os.path.exists(DIASPORA_LONG_REPO) else DIASPORA_LONG_LOCAL
+    df = pd.read_parquet(path)
+    if "year" in df.columns:
+        df["year"] = pd.to_numeric(df["year"], errors="coerce")
+    if "metric_value" in df.columns:
+        df["metric_value"] = pd.to_numeric(df["metric_value"], errors="coerce")
     return df
 
 def _prep(df):
@@ -187,16 +230,26 @@ def add_model_cols(df):
     return df
 
 #  Claude agent 
-def run_agent(msg, df, key, ukey):
+def run_agent(msg, df, key, ukey, source_name, history):
     client = anthropic.Anthropic(api_key=key)
     hist = [{"role":m["role"],"content":m["content"]}
-            for m in st.session_state.messages[-12:]
+            for m in history[-12:]
             if m["role"] in ("user","assistant") and isinstance(m.get("content"),str)]
     hist.append({"role":"user","content":msg})
-    sn = ("\nDataset includes simulation scenarios. "
-          "workers_sim=simulated, workers_change=net change." if has_sims(df) else "")
-    sys = (f"You are an expert on U.S. labor markets and GTAP.{sn}\n"
-           "Use tools for all numbers. create_map for maps. create_chart for trends.")
+    if source_name == "Diaspora GDP":
+        sys = (
+            "You are an expert on U.S. diaspora GDP contribution estimates.\n"
+            "The current dataset is a normalized long dataset. Use tools for all numbers. "
+            "For state maps use create_map. For queries, filter by table_name, metric_name, "
+            "population_group, demographic_subgroup_label, nativity_type, and state_name as needed. "
+            "table_name values include national_summary, state_group, and state_wide. "
+            "metric_value is the numeric field to aggregate."
+        )
+    else:
+        sn = ("\nDataset includes simulation scenarios. "
+              "workers_sim=simulated, workers_change=net change." if has_sims(df) else "")
+        sys = (f"You are an expert on U.S. labor markets and GTAP.{sn}\n"
+               "Use tools for all numbers. create_map for maps. create_chart for trends.")
     figs, text, msgs = [], "", [*hist]
     for i in range(6):
         r = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=2048,
@@ -470,6 +523,151 @@ def render_dashboard(df):
                 margin=dict(t=40,b=10,l=10,r=10), title_font_size=14)
             st.plotly_chart(fig, key=f"cmp_{sel_sec}_{sel_sk}_{sel_bp}_{agg}")
 
+
+def render_diaspora_dashboard():
+    import plotly.express as px
+
+    state_df = load_diaspora_state()
+    national_df = load_diaspora_national()
+
+    st.markdown("### Diaspora GDP Dashboard")
+    st.caption("State and national estimates from the diaspora GDP contribution workbook.")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        group = st.selectbox(
+            "Population group",
+            sorted(state_df["population_group"].dropna().unique().tolist()),
+            key="diaspora_group",
+        )
+    with c2:
+        subgroup_opts = sorted(
+            state_df[state_df["population_group"] == group]["demographic_subgroup_label"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        subgroup = st.selectbox(
+            "Demographic subgroup",
+            ["All subgroups"] + subgroup_opts,
+            key="diaspora_subgroup",
+        )
+    with c3:
+        metric_map = {
+            "GDP contribution (billions USD, 2023)": "gdp_billion_2023",
+            "GDP contribution (trillions USD, 2023)": "gdp_trillion_2023",
+            "Share of state GDP (%)": "share_of_state_gdp_pct",
+        }
+        metric_label = st.selectbox("Metric", list(metric_map.keys()), key="diaspora_metric")
+        metric_col = metric_map[metric_label]
+
+    filt = state_df[state_df["population_group"] == group].copy()
+    if subgroup != "All subgroups":
+        filt = filt[filt["demographic_subgroup_label"] == subgroup]
+
+    nat = national_df[national_df["population_group"] == group].copy()
+    nat_total = nat[nat["nativity_type"] == "Total"]
+    nat_nb = nat[nat["nativity_type"] == "Native-Born"]
+    nat_fb = nat[nat["nativity_type"].str.contains("Foreign", na=False)]
+
+    k1, k2, k3, k4 = st.columns(4)
+    total_trillions = nat_total["gdp_trillion_2023"].sum()
+    native_trillions = nat_nb["gdp_trillion_2023"].sum()
+    foreign_trillions = nat_fb["gdp_trillion_2023"].sum()
+    total_share = nat_total["share_of_us_gdp_pct"].sum()
+    for c, v, l in [
+        (k1, f"{total_trillions:.2f}", "Total GDP (trillions USD)"),
+        (k2, f"{native_trillions:.2f}", "Native-Born GDP (trillions)"),
+        (k3, f"{foreign_trillions:.2f}", "Foreign-Born GDP (trillions)"),
+        (k4, f"{total_share:.2f}%", "Share of U.S. GDP"),
+    ]:
+        with c:
+            st.markdown(mc(v, l), unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    left, right = st.columns([3, 2])
+    with left:
+        map_df = filt[["state_abbrev", "state_name", metric_col]].dropna().copy()
+        fig = px.choropleth(
+            map_df,
+            locations="state_abbrev",
+            locationmode="USA-states",
+            color=metric_col,
+            scope="usa",
+            color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
+            hover_data={"state_abbrev": False, "state_name": True, metric_col: ":.2f"},
+            title=f"{metric_label} by State",
+            labels={metric_col: metric_label, "state_name": "State"},
+        )
+        fig.update_layout(
+            margin={"r": 0, "t": 40, "l": 0, "b": 0},
+            height=430,
+            title_font_size=14,
+            coloraxis_colorbar=dict(title=metric_label),
+        )
+        st.plotly_chart(fig, key=f"diaspora_map_{group}_{subgroup}_{metric_col}")
+
+    with right:
+        top_states = filt[["state_name", metric_col]].sort_values(metric_col, ascending=False).head(15)
+        fig = px.bar(
+            top_states.sort_values(metric_col),
+            x=metric_col,
+            y="state_name",
+            orientation="h",
+            title=f"Top 15 States - {metric_label}",
+            color=metric_col,
+            color_continuous_scale="Blues" if metric_col != "share_of_state_gdp_pct" else "YlOrRd",
+            labels={metric_col: metric_label, "state_name": "State"},
+        )
+        fig.update_layout(
+            height=430,
+            showlegend=False,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            coloraxis_showscale=False,
+            yaxis=dict(autorange="reversed"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            title_font_size=14,
+        )
+        st.plotly_chart(fig, key=f"diaspora_bar_{group}_{subgroup}_{metric_col}")
+
+    low1, low2 = st.columns(2)
+    with low1:
+        nat_bar = nat[["demographic_subgroup_label", "gdp_trillion_2023"]].copy()
+        fig = px.bar(
+            nat_bar.sort_values("gdp_trillion_2023"),
+            x="gdp_trillion_2023",
+            y="demographic_subgroup_label",
+            orientation="h",
+            title="National Summary by Demographic Subgroup",
+            color="gdp_trillion_2023",
+            color_continuous_scale="Blues",
+            labels={"gdp_trillion_2023": "GDP (trillions USD)", "demographic_subgroup_label": ""},
+        )
+        fig.update_layout(
+            height=280,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            coloraxis_showscale=False,
+            margin=dict(l=10, r=10, t=40, b=10),
+            title_font_size=14,
+        )
+        st.plotly_chart(fig, key=f"diaspora_natbar_{group}")
+
+    with low2:
+        preview = filt.sort_values(metric_col, ascending=False)[
+            [
+                "state_name",
+                "demographic_subgroup_label",
+                "nativity_type",
+                "gdp_billion_2023",
+                "share_of_state_gdp_pct",
+            ]
+        ].head(15)
+        st.markdown("#### Top state rows")
+        st.dataframe(preview, use_container_width=True, hide_index=True)
+
 #  Sidebar 
 with st.sidebar:
     st.markdown("## Configuration")
@@ -530,67 +728,117 @@ with st.sidebar:
         if st.button(ex, key=f"ex_{ex[:15]}"): st.session_state["prefill"] = ex
     st.markdown("---")
     if st.button("Clear conversation"):
-        st.session_state.messages = []; st.session_state.figures = {}; st.rerun()
+        st.session_state.messages_gtap = []
+        st.session_state.messages_diaspora = []
+        st.session_state.figures_gtap = {}
+        st.session_state.figures_diaspora = {}
+        st.rerun()
 
 #  Header 
 st.markdown('<div class="mh"> GTAP Labor Data Explorer</div>', unsafe_allow_html=True)
 st.markdown('<div class="sh">Interactive dashboard and conversational analysis '
-            'for 65 GTAP sectors across U.S. counties.</div>', unsafe_allow_html=True)
-
-if st.session_state.df is None:
-    st.info("Click **Load Data** in the sidebar to get started.")
-    st.stop()
+            'for GTAP labor data and Diaspora GDP estimates.</div>', unsafe_allow_html=True)
 
 df = st.session_state.df
-tab1, tab2 = st.tabs([" Interactive Dashboard", " Ask Claude"])
+tab1, tab2, tab3 = st.tabs([" Interactive Dashboard", " Diaspora GDP", " Ask Claude"])
 
 with tab1:
-    render_dashboard(df)
+    if df is None:
+        st.info("Click **Load Data** in the sidebar to load the GTAP dataset.")
+    else:
+        render_dashboard(df)
 
 with tab2:
-    bp2    = bpcol(df)
-    latest = int(df["year"].max()) if "year" in df.columns else 2024
-    dl     = df[(df["scenario"]=="baseline")&(df["year"]==latest)] if "scenario" in df.columns else df
-    tot    = dl["workers_base"].sum() if "workers_base" in dl.columns else 0
-    fb2    = dl[dl[bp2].str.contains("Foreign",na=False)]["workers_base"].sum() if "workers_base" in dl.columns else 0
-    sk2    = dl[dl["skill_level"]=="Skilled"]["workers_base"].sum() if "workers_base" in dl.columns else 0
-    c1,c2,c3,c4,c5 = st.columns(5)
-    for c,v,l in [(c1,f"{int(tot):,}",f"Baseline {latest}"),
-                  (c2,f"{fb2/tot*100:.1f}%" if tot else "","Foreign Born"),
-                  (c3,f"{sk2/tot*100:.1f}%" if tot else "","Skilled"),
-                  (c4,str(df["gtap_code"].nunique()) if "gtap_code" in df.columns else "","GTAP Sectors"),
-                  (c5,f"{df['county_fips'].nunique():,}" if "county_fips" in df.columns else "","Counties")]:
-        with c: st.markdown(mc(v,l), unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+    render_diaspora_dashboard()
 
-    for i, msg in enumerate(st.session_state.messages):
-        with st.chat_message(msg["role"]):
-            if isinstance(msg.get("content"),str): st.markdown(msg["content"])
-            for fid in msg.get("figures",[]):
-                if fid in st.session_state.figures:
-                    st.plotly_chart(st.session_state.figures[fid], key=f"h_{fid}_{i}")
+with tab3:
+    chat_source = st.radio(
+        "Data source",
+        ["GTAP labor", "Diaspora GDP"],
+        horizontal=True,
+        key="chat_source",
+    )
 
-    pf = st.session_state.pop("prefill","")
-    ui = st.chat_input("Ask Claude about the GTAP labor data...")
-    if pf and not ui: ui = pf
-    if ui:
-        if not ak: st.error("Enter API key in sidebar."); st.stop()
-        with st.chat_message("user"): st.markdown(ui)
-        st.session_state.messages.append({"role":"user","content":ui})
-        with st.chat_message("assistant"):
-            with st.spinner("Analyzing..."):
-                try:
-                    rt, figs = run_agent(ui, df, ak, ukey)
-                    if rt: st.markdown(rt)
-                    fids = []
-                    for fid, fig in figs:
-                        st.plotly_chart(fig, key=f"new_{fid}")
-                        st.session_state.figures[fid] = fig
-                        fids.append(fid)
-                    st.session_state.messages.append({
-                        "role":"assistant",
-                        "content": rt or "(See chart)",
-                        "figures": fids
-                    })
-                except anthropic.AuthenticationError: st.error("Invalid API key.")
-                except Exception as e: st.error(f"Error: {e}")
+    if chat_source == "GTAP labor":
+        if df is None:
+            st.info("Load the GTAP dataset from the sidebar to use Ask Claude with labor data.")
+        else:
+            chat_df = df
+            messages_key = "messages_gtap"
+            figures_key = "figures_gtap"
+            bp2 = bpcol(chat_df)
+            latest = int(chat_df["year"].max()) if "year" in chat_df.columns else 2024
+            dl = chat_df[(chat_df["scenario"] == "baseline") & (chat_df["year"] == latest)] if "scenario" in chat_df.columns else chat_df
+            tot = dl["workers_base"].sum() if "workers_base" in dl.columns else 0
+            fb2 = dl[dl[bp2].str.contains("Foreign", na=False)]["workers_base"].sum() if "workers_base" in dl.columns else 0
+            sk2 = dl[dl["skill_level"] == "Skilled"]["workers_base"].sum() if "workers_base" in dl.columns else 0
+            cards = [
+                (f"{int(tot):,}", f"Baseline {latest}"),
+                (f"{fb2 / tot * 100:.1f}%" if tot else "", "Foreign Born"),
+                (f"{sk2 / tot * 100:.1f}%" if tot else "", "Skilled"),
+                (str(chat_df["gtap_code"].nunique()) if "gtap_code" in chat_df.columns else "", "GTAP Sectors"),
+                (f"{chat_df['county_fips'].nunique():,}" if "county_fips" in chat_df.columns else "", "Counties"),
+            ]
+            source_name = "GTAP labor"
+            chat_label = "Ask Claude about the GTAP labor data..."
+    else:
+        chat_df = load_diaspora_long()
+        messages_key = "messages_diaspora"
+        figures_key = "figures_diaspora"
+        nat = load_diaspora_national()
+        lat_total = nat[(nat["population_group"] == "Latino") & (nat["nativity_type"] == "Total")]["gdp_trillion_2023"].sum()
+        mex_total = nat[(nat["population_group"] == "Mexican-Origin") & (nat["nativity_type"] == "Total")]["gdp_trillion_2023"].sum()
+        cards = [
+            (f"{len(chat_df):,}", "Rows"),
+            ("2023", "Year"),
+            (f"{lat_total:.2f}", "Latino GDP (trillions)"),
+            (f"{mex_total:.2f}", "Mexican-Origin GDP (trillions)"),
+            (str(chat_df[chat_df["geography_level"] == "state"]["state_name"].nunique()), "States"),
+        ]
+        source_name = "Diaspora GDP"
+        chat_label = "Ask Claude about the diaspora GDP data..."
+
+    if not (chat_source == "GTAP labor" and df is None):
+        c1, c2, c3, c4, c5 = st.columns(5)
+        for c, (v, l) in zip([c1, c2, c3, c4, c5], cards):
+            with c:
+                st.markdown(mc(v, l), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        for i, msg in enumerate(st.session_state[messages_key]):
+            with st.chat_message(msg["role"]):
+                if isinstance(msg.get("content"), str):
+                    st.markdown(msg["content"])
+                for fid in msg.get("figures", []):
+                    if fid in st.session_state[figures_key]:
+                        st.plotly_chart(st.session_state[figures_key][fid], key=f"h_{figures_key}_{fid}_{i}")
+
+        pf = st.session_state.pop("prefill", "")
+        ui = st.chat_input(chat_label)
+        if pf and not ui and chat_source == "GTAP labor":
+            ui = pf
+        if ui:
+            if not ak:
+                st.error("Enter API key in sidebar.")
+                st.stop()
+            with st.chat_message("user"):
+                st.markdown(ui)
+            st.session_state[messages_key].append({"role": "user", "content": ui})
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing..."):
+                    try:
+                        rt, figs = run_agent(ui, chat_df, ak, ukey, source_name, st.session_state[messages_key])
+                        if rt:
+                            st.markdown(rt)
+                        fids = []
+                        for fid, fig in figs:
+                            st.plotly_chart(fig, key=f"new_{figures_key}_{fid}")
+                            st.session_state[figures_key][fid] = fig
+                            fids.append(fid)
+                        st.session_state[messages_key].append(
+                            {"role": "assistant", "content": rt or "(See chart)", "figures": fids}
+                        )
+                    except anthropic.AuthenticationError:
+                        st.error("Invalid API key.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")

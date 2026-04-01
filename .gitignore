@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+*.pyc
+.python-version.txt
+gtap_master_with_simulations.csv
+files.zip
+/m3_gdp_estimates.xlsx

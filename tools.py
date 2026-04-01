@@ -1,9 +1,10 @@
 """
 tools.py
 Data tools available to the Claude agent.
-Column names match gtap_dashboard.parquet:
-  scenario, year, gtap_code, gtap_sector, skill_level, birthplace,
-  county_fips, county_name, state, workers_base, workers_sim, workers_change
+
+Supported datasets:
+1. GTAP labor dashboard data
+2. Diaspora GDP long-form data
 """
 
 import pandas as pd
@@ -14,6 +15,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 def _wcol(df, scenario=None):
+    if "metric_value" in df.columns:
+        return "metric_value"
     if scenario and scenario != "baseline" and "workers_change" in df.columns:
         return "workers_change"
     if "workers_base" in df.columns:
@@ -27,6 +30,12 @@ def _wcol(df, scenario=None):
 
 def _bpcol(df):
     return "birthplace" if "birthplace" in df.columns else "birthplace_label"
+
+
+def _schema(df):
+    if "metric_value" in df.columns and "table_name" in df.columns:
+        return "diaspora"
+    return "gtap"
 
 def _apply_filters(data, filters):
     if not filters:
@@ -44,13 +53,10 @@ TOOL_DEFINITIONS = [
     {
         "name": "query_dataset",
         "description": (
-            "Query the GTAP labor dataset. Use to answer questions about "
-            "worker counts, employment changes, sectors, states, or counties. "
-            "Columns: scenario, year, gtap_code, gtap_sector, skill_level, birthplace, "
-            "state, county_fips, county_name, workers_base (baseline employment), "
-            "workers_sim (simulated employment), workers_change (change vs baseline). "
-            "Scenarios: baseline, JPM_sim03, JPM_sim03b, JPM_sim03c, USMCA_SR, USMCA_LR. "
-            "For simulation questions filter by scenario and use workers_change."
+            "Query the current dataset. For GTAP labor data use worker columns such as "
+            "workers_base, workers_sim, or workers_change. For Diaspora GDP data use "
+            "metric_value and filter by metric_name, table_name, population_group, "
+            "demographic_subgroup_label, nativity_type, state_name, or geography_level."
         ),
         "input_schema": {
             "type": "object",
@@ -66,8 +72,8 @@ TOOL_DEFINITIONS = [
                 },
                 "metric": {
                     "type": "string",
-                    "enum": ["workers_base", "workers_sim", "workers_change"],
-                    "description": "Metric to aggregate. Use workers_change for simulations."
+                    "enum": ["workers_base", "workers_sim", "workers_change", "metric_value"],
+                    "description": "Metric to aggregate. Use workers_change for GTAP simulations and metric_value for Diaspora GDP."
                 },
                 "top_n": {"type": "integer", "description": "Return top N rows."},
                 "sort_desc": {"type": "boolean", "description": "Sort descending. Default: true"}
@@ -78,8 +84,8 @@ TOOL_DEFINITIONS = [
     {
         "name": "create_map",
         "description": (
-            "Create a choropleth map showing workers or employment change by county. "
-            "Use RdYlGn scale for workers_change, Blues for workers_base."
+            "Create a choropleth map from the current dataset. "
+            "GTAP maps use county_fips. Diaspora GDP maps use state_abbrev."
         ),
         "input_schema": {
             "type": "object",
@@ -90,7 +96,7 @@ TOOL_DEFINITIONS = [
                 },
                 "metric": {
                     "type": "string",
-                    "enum": ["workers_base", "workers_sim", "workers_change"],
+                    "enum": ["workers_base", "workers_sim", "workers_change", "metric_value"],
                     "description": "Column to map. Auto-detected if not specified."
                 },
                 "title": {"type": "string", "description": "Map title."},
@@ -117,7 +123,7 @@ TOOL_DEFINITIONS = [
                 "x": {"type": "string", "description": "Column for x-axis."},
                 "metric": {
                     "type": "string",
-                    "enum": ["workers_base", "workers_sim", "workers_change"],
+                    "enum": ["workers_base", "workers_sim", "workers_change", "metric_value"],
                     "description": "Metric to plot. Auto-detected if not specified."
                 },
                 "color": {"type": "string", "description": "Column for color grouping."},
@@ -129,9 +135,8 @@ TOOL_DEFINITIONS = [
     {
         "name": "get_dataset_info",
         "description": (
-            "Get dataset metadata: scenarios, sectors, states, skill levels, "
-            "birthplace categories, total workers, and column names. "
-            "Always call this first when the user asks what data is available."
+            "Get metadata for the current dataset, including columns, categories, "
+            "geography coverage, and key metrics. Always call this first when the user asks what data is available."
         ),
         "input_schema": {"type": "object", "properties": {}, "required": []}
     },
@@ -212,33 +217,51 @@ def create_map(df, filters=None, metric=None,
             metric = _wcol(data, scenario)
         if color_scale is None:
             color_scale = "RdYlGn" if metric == "workers_change" else "Blues"
-        if "county_fips" not in data.columns:
+
+        if "county_fips" in data.columns:
+            county_data = (
+                data.groupby(["county_fips", "county_name", "state"])[metric]
+                .sum().reset_index()
+            )
+            county_data = county_data[
+                county_data["county_fips"].notna() &
+                (county_data["county_fips"].str.len() == 5)
+            ]
+
+            kw = {"color_continuous_midpoint": 0} if metric == "workers_change" else {}
+            fig = px.choropleth(
+                county_data,
+                geojson="https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json",
+                locations="county_fips",
+                color=metric,
+                color_continuous_scale=color_scale,
+                scope="usa",
+                hover_data={"county_fips": False, "county_name": True,
+                            "state": True, metric: ":,"},
+                title=title,
+                labels={metric: metric.replace("_", " ").title(),
+                        "county_name": "County", "state": "State"},
+                **kw
+            )
+        elif "state_abbrev" in data.columns:
+            state_data = (
+                data.groupby(["state_abbrev", "state_name"])[metric]
+                .sum().reset_index()
+            )
+            fig = px.choropleth(
+                state_data,
+                locations="state_abbrev",
+                locationmode="USA-states",
+                color=metric,
+                color_continuous_scale=color_scale,
+                scope="usa",
+                hover_data={"state_abbrev": False, "state_name": True, metric: ":.2f"},
+                title=title,
+                labels={metric: metric.replace("_", " ").title(), "state_name": "State"},
+            )
+        else:
             return None
 
-        county_data = (
-            data.groupby(["county_fips", "county_name", "state"])[metric]
-            .sum().reset_index()
-        )
-        county_data = county_data[
-            county_data["county_fips"].notna() &
-            (county_data["county_fips"].str.len() == 5)
-        ]
-
-        kw = {"color_continuous_midpoint": 0} if metric == "workers_change" else {}
-        fig = px.choropleth(
-            county_data,
-            geojson="https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json",
-            locations="county_fips",
-            color=metric,
-            color_continuous_scale=color_scale,
-            scope="usa",
-            hover_data={"county_fips": False, "county_name": True,
-                        "state": True, metric: ":,"},
-            title=title,
-            labels={metric: metric.replace("_", " ").title(),
-                    "county_name": "County", "state": "State"},
-            **kw
-        )
         fig.update_layout(
             margin={"r": 0, "t": 40, "l": 0, "b": 0},
             coloraxis_colorbar=dict(
@@ -307,6 +330,33 @@ def create_chart(df, chart_type, filters=None, x="gtap_code",
 
 def get_dataset_info(df):
     try:
+        if _schema(df) == "diaspora":
+            info = {
+                "success": True,
+                "info": {
+                    "dataset_type": "diaspora_gdp",
+                    "total_rows": len(df),
+                    "columns": list(df.columns),
+                    "years": sorted(df["year"].dropna().unique().tolist()) if "year" in df.columns else [],
+                    "table_names": sorted(df["table_name"].dropna().unique().tolist()) if "table_name" in df.columns else [],
+                    "geography_levels": sorted(df["geography_level"].dropna().unique().tolist()) if "geography_level" in df.columns else [],
+                    "population_groups": sorted([x for x in df["population_group"].dropna().unique().tolist() if x]) if "population_group" in df.columns else [],
+                    "nativity_types": sorted([x for x in df["nativity_type"].dropna().unique().tolist() if x]) if "nativity_type" in df.columns else [],
+                    "metrics": sorted(df["metric_name"].dropna().unique().tolist()) if "metric_name" in df.columns else [],
+                    "n_states": df[df["geography_level"] == "state"]["state_name"].nunique() if "state_name" in df.columns and "geography_level" in df.columns else 0,
+                }
+            }
+            if "metric_name" in df.columns and "metric_value" in df.columns:
+                top_metrics = (
+                    df.groupby("metric_name")["metric_value"]
+                    .agg(["count", "min", "max"])
+                    .reset_index()
+                    .sort_values("count", ascending=False)
+                    .head(10)
+                )
+                info["info"]["metric_preview"] = top_metrics.to_dict(orient="records")
+            return info
+
         bp = _bpcol(df)
         has_sims = "scenario" in df.columns and df["scenario"].nunique() > 1
         scenarios = sorted(df["scenario"].unique().tolist()) if "scenario" in df.columns else ["baseline"]

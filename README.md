@@ -11,8 +11,17 @@ builds county-level maps, and explains results.
 pip install -r requirements.txt
 ```
 
-### 2. Place your data file
-Copy `gtap_complete_master.csv` to this folder, or note the full path.
+### 2. Place your data files
+For the GTAP dashboard, keep the parquet files in this folder.
+
+For the Diaspora GDP dashboard, place the Excel source at:
+`data/raw/m3_gdp_estimates.xlsx`
+
+If you receive an updated Excel with the same structure, replace that file and regenerate the derived parquets with:
+
+```bash
+python3 scripts/build_diaspora_gdp.py
+```
 
 ### 3. Set API keys (optional — can also enter in the app sidebar)
 ```bash
@@ -62,8 +71,10 @@ The app opens at http://localhost:8501
 |------|-------------|
 | `app.py` | Main Streamlit application and Claude agent |
 | `tools.py` | Data tool functions (query, map, chart, USDA API) |
+| `scripts/build_diaspora_gdp.py` | Rebuilds Diaspora GDP parquet files from the Excel source |
 | `requirements.txt` | Python dependencies |
-| `gtap_complete_master.csv` | Your GTAP labor dataset (place here) |
+| `data/raw/m3_gdp_estimates.xlsx` | Source Excel for Diaspora GDP |
+| `diaspora_*.parquet` | Derived Diaspora GDP datasets used by the app |
 
 ---
 
